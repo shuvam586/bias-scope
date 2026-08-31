@@ -52,7 +52,7 @@ def clean_text(text):
     text = re.sub(r"https?://\S+|www\.\S+", " ", text)
     text = re.sub(r"\s+", " ", text)
 
-    print("Text Cleaned")
+    # print("Text Cleaned")
     return text.strip()
 
 

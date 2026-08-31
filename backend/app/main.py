@@ -32,14 +32,18 @@ def get_image_from_link(url):
 
 allArticles = []
 
+print("Fetching News Articles:\n")
+
 for source in SOURCES.values():
     print(source["name"])
-    print()
 
     for f in source["feeds"]:
-        print(f)
-        allArticles.extend(fetch_feed(f, source["name"]))
+        newArticles = fetch_feed(f, source["name"])
+        print(len(newArticles), f)
+        allArticles.extend(newArticles)
 
+    print()
+    
 results = cluster_articles(allArticles)
 
 events = results["events"]
