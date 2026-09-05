@@ -38,7 +38,7 @@ for source in SOURCES.values():
     print(source["name"])
 
     for f in source["feeds"]:
-        newArticles = fetch_feed(f, source["name"])
+        newArticles = fetch_feed(f, source["name"], source['googlenews'])
         print(len(newArticles), f)
         allArticles.extend(newArticles)
 
@@ -49,6 +49,7 @@ results = cluster_articles(allArticles)
 events = results["events"]
 articles = results["articles"]
 
+# image fetching
 for event in events:
     for article in articles:
         if article.cluster==event.id:

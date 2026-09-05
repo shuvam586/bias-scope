@@ -13,7 +13,7 @@ class Article(BaseModel):
     source: str
     cluster: str | None
 
-def fetch_feed(outlet: str, source_name: str = "unknown") -> list[Article]:
+def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -> list[Article]:
     feed = fp.parse(outlet)
 
     # print(outlet, "\n")
@@ -29,19 +29,26 @@ def fetch_feed(outlet: str, source_name: str = "unknown") -> list[Article]:
         else:
             better_desc = og_desc
 
-        og_date = entry.get("published")
-
         try:
             better_date = datetime.strptime(entry.get("published"),"%a, %d %b %Y %H:%M:%S %z")
         except:
             try:
                 better_date = datetime.fromisoformat(entry.get("published"),"%a, %d %b %Y %H:%M:%S %z")
             except:
-                better_date = None
+                try:
+                    better_date = datetime.strptime(entry.get("published"),"%a, %d %b %Y %H:%M:%S GMT")
+                except:
+                    better_date = datetime.now()
+
+        better_title = entry.get("title")
+        
+        if (google_news):
+            better_title = better_title[::-1].split("- ")[1][::-1]
+            better_desc = better_title
 
         article = Article(
             id=None,
-            title=entry.get("title"),
+            title=better_title,
             url=entry.get("link"),
             description=better_desc,
             author=entry.get("author"),
@@ -58,6 +65,12 @@ def fetch_feed(outlet: str, source_name: str = "unknown") -> list[Article]:
 
     return articles_list
 
-(fetch_feed(
-    outlet="https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"
-))
+# print(fetch_feed(
+#     outlet="https://news.google.com/rss/search?q=site%3Atelegraphindia.com&hl=en-IN&gl=IN&ceid=IN:en"
+# )[0].published_at)
+
+# print()
+
+# print(fetch_feed(
+#     outlet="https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"
+# )[0])

@@ -96,6 +96,7 @@ def cluster_articles(articles: list[Article]) -> dict:
     df["published_at"] = pd.to_datetime(
         df["published_at"],
         errors="coerce",
+        format="mixed",
         utc=True
     )
 
