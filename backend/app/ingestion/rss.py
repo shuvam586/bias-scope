@@ -1,3 +1,5 @@
+import requests
+import trafilatura
 import feedparser as fp
 from datetime import datetime 
 from pydantic import BaseModel, HttpUrl
@@ -13,6 +15,40 @@ class Article(BaseModel):
     source: str
     cluster: str | None
 
+def extract_article_text(article_url: str) -> str | None:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/140.0 Safari/537.36"
+        )
+    }
+
+    try:
+        response = requests.get(
+            article_url,
+            headers=headers,
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+        text = trafilatura.extract(
+            response.text,
+            url=article_url,
+            favor_recall=True,
+        )
+
+        return text
+
+    except requests.RequestException as e:
+        print(f"Failed to fetch {article_url}: {e}")
+        return None
+
+    except Exception as e:
+        print(f"Failed to extract {article_url}: {e}")
+        return None
+
 def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -> list[Article]:
     feed = fp.parse(outlet)
 
@@ -23,11 +59,16 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
     for entry in feed.entries:
 
         og_desc = entry.get("summary")
-        if ">" in og_desc:
-            rightmostgreaterthansymbollmao = len(og_desc)-1-og_desc[:-1].find(">")
-            better_desc = og_desc[rightmostgreaterthansymbollmao+1:]
+        full_desc = extract_article_text(entry.get("link"))
+
+        if full_desc is not None:
+            better_desc = full_desc
         else:
-            better_desc = og_desc
+            if ">" in og_desc:
+                rightmostgreaterthansymbollmao = len(og_desc)-1-og_desc[:-1].find(">")
+                better_desc = og_desc[rightmostgreaterthansymbollmao+1:]
+            else:
+                better_desc = og_desc
 
         try:
             better_date = datetime.strptime(entry.get("published"),"%a, %d %b %Y %H:%M:%S %z")
