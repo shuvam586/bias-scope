@@ -34,9 +34,16 @@ jobs:
           path: ~/.cache/huggingface
           key: huggingface-${{ runner.os }}-all-MiniLM-L6-v2
 
-      - name: Run news pipeline
+      - name: Run article pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python -m backend.app.main
+          python -m backend.app.article_pipeline
+
+      - name: Run claims analysis
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python -m backend.app.claims_analysis

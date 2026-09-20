@@ -36,7 +36,7 @@ def extract_article_text(article_url: str) -> str | None:
         text = trafilatura.extract(
             response.text,
             url=article_url,
-            favor_recall=True,
+            favor_precision=True,
         )
 
         return text

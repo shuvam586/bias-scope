@@ -705,3 +705,46 @@ nav {
 .event-grid {
   grid-auto-flow: dense;
 }
+
+.claims-section {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid var(--line);
+}
+.claims-section h2 {
+  font-size: 21px;
+  margin: 0 0 20px;
+}
+.claims-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.claim-card {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 20px 24px;
+  transition: border-color 0.2s;
+}
+.claim-card:hover {
+  border-color: var(--accent);
+}
+.claim-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+.claim-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: "DM Mono";
+}
+.claim-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}

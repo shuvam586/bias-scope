@@ -34,6 +34,22 @@ class Event(BaseModel):
     image: str
 
 
+class Claim(BaseModel):
+    id: str | None = None
+    event: str | None = None
+    text: str
+    source_count: int
+    article_count: int
+
+
+class ClaimSentence(BaseModel):
+    id: str | None = None
+    claim: str | None = None
+    article: str | None = None
+    source: str | None = None
+    text: str
+    similarity: float
+
 MODEL_NAME = "all-MiniLM-L6-v2"
 
 HDBSCAN_MIN_CLUSTER_SIZE = 2
@@ -181,6 +197,9 @@ def cluster_articles(articles: list[Article]) -> dict:
         combined_distance,
         0
     )
+
+    # HDBSCAN requires float64 for precomputed metric
+    combined_distance = combined_distance.astype(np.float64)
 
     hdbscan_model = hdbscan.HDBSCAN(
         min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
@@ -350,3 +369,128 @@ def cluster_articles(articles: list[Article]) -> dict:
 
 # results = cluster_articles(articles)
 # print(results)
+
+
+CLAIM_HDBSCAN_MIN_CLUSTER_SIZE = 2
+CLAIM_HDBSCAN_MIN_SAMPLES = 1
+
+
+def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
+    """
+    Cluster claim sentences by semantic similarity.
+    Returns dict with 'claims' (list of Claim) and 'claim_sentences' (list of ClaimSentence with cluster assignments).
+    """
+    if not claim_sentences:
+        return {"claims": [], "claim_sentences": []}
+
+    # Convert to dict for DataFrame
+    sentences_data = [cs.model_dump(mode="json") for cs in claim_sentences]
+    df = pd.DataFrame(sentences_data)
+
+    # Clean text
+    df["text"] = df["text"].astype(str).apply(clean_text).str.strip()
+    df = df[df["text"].str.len() > 0].reset_index(drop=True)
+
+    if len(df) == 0:
+        return {"claims": [], "claim_sentences": []}
+
+    # Generate embeddings for all claim sentences
+    embeddings = []
+    for _, row in df.iterrows():
+        emb = model.encode(row["text"], show_progress_bar=False)
+        embeddings.append(emb)
+    embeddings = np.array(embeddings)
+
+    # Semantic similarity only (no temporal component for claims)
+    semantic_similarity = cosine_similarity(embeddings)
+    combined_distance = 1 - semantic_similarity
+    combined_distance = np.clip(combined_distance, 0, 1)
+    np.fill_diagonal(combined_distance, 0)
+
+    # HDBSCAN requires float64 for precomputed metric
+    combined_distance = combined_distance.astype(np.float64)
+
+    # HDBSCAN clustering
+    hdbscan_model = hdbscan.HDBSCAN(
+        min_cluster_size=CLAIM_HDBSCAN_MIN_CLUSTER_SIZE,
+        min_samples=CLAIM_HDBSCAN_MIN_SAMPLES,
+        metric="precomputed"
+    )
+    labels = hdbscan_model.fit_predict(combined_distance)
+
+    # Assign noise points (-1) to their own clusters
+    next_cluster = labels.max() + 1 if len(labels) > 0 else 0
+    for i in range(len(labels)):
+        if labels[i] == -1:
+            labels[i] = next_cluster
+            next_cluster += 1
+
+    df["cluster_id"] = labels
+
+    # Create Claim objects from clusters
+    claims = []
+    claim_id_map = {}
+
+    for cluster_id in sorted(df["cluster_id"].unique()):
+        cluster_mask = df["cluster_id"] == cluster_id
+        cluster_indices = df.index[cluster_mask].tolist()
+        cluster_embeddings = embeddings[cluster_indices]
+
+        # Centroid
+        centroid = np.mean(cluster_embeddings, axis=0)
+        centroid_similarities = cosine_similarity(cluster_embeddings, centroid.reshape(1, -1)).flatten()
+
+        # Representative sentence (closest to centroid)
+        best_pos = np.argmax(centroid_similarities)
+        best_idx = cluster_indices[best_pos]
+        representative_text = df.loc[best_idx, "text"]
+
+        # Collect unique sources and articles
+        cluster_df = df[cluster_mask]
+        unique_sources = set()
+        unique_articles = set()
+        
+        # Need to get source info from original claim_sentences
+        for idx in cluster_indices:
+            orig_cs = claim_sentences[idx]
+            if orig_cs.article:
+                unique_articles.add(orig_cs.article)
+                unique_sources.add(orig_cs.source)
+
+        claim_id = str(uuid4())
+        claim_id_map[cluster_id] = claim_id
+
+        claims.append(Claim(
+            id=claim_id,
+            event=None,  # Could be linked later if needed
+            text=representative_text,
+            source_count=len(unique_sources),
+            article_count=len(unique_articles)
+        ))
+
+    # Update claim_sentences with cluster assignments and similarities
+    updated_claim_sentences = []
+    for idx, row in df.iterrows():
+        cluster_id = row["cluster_id"]
+        claim_id = claim_id_map[cluster_id]
+        
+        # Calculate similarity to cluster centroid
+        cluster_mask = df["cluster_id"] == cluster_id
+        cluster_indices = df.index[cluster_mask].tolist()
+        cluster_embeddings = embeddings[cluster_indices]
+        centroid = np.mean(cluster_embeddings, axis=0)
+        sim = cosine_similarity(embeddings[idx].reshape(1, -1), centroid.reshape(1, -1))[0, 0]
+
+        orig_cs = claim_sentences[idx]
+        updated_claim_sentences.append(ClaimSentence(
+            id=orig_cs.id,
+            claim=claim_id,
+            article=orig_cs.article,
+            text=orig_cs.text,
+            similarity=float(sim)
+        ))
+
+    return {
+        "claims": claims,
+        "claim_sentences": updated_claim_sentences
+    }

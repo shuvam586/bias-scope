@@ -242,11 +242,12 @@ function EventPage() {
   const { eventid } = useParams();
   const [event, setEvent] = useState(),
     [articles, setArticles] = useState([]),
+    [claims, setClaims] = useState([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   useEffect(() => {
     (async () => {
-      const [er, ar] = await Promise.all([
+      const [er, ar, cr] = await Promise.all([
         supabase
           .from("events")
           .select("id,title,summary,created_at")
@@ -257,12 +258,22 @@ function EventPage() {
           .select("id,title,description,author,published_at,source,url")
           .eq("cluster", eventid)
           .order("published_at", { ascending: false }),
+        supabase
+          .from("claims")
+          .select("id,text,source_count,article_count")
+          .eq("event", eventid)
+          .order("article_count", { ascending: false }),
       ]);
       if (er.error) setError(er.error.message);
       else {
         setEvent(er.data);
         setArticles(ar.data || []);
         if (ar.error) setError(ar.error.message);
+      }
+      if (cr.error) {
+        logger.error("Claims fetch error:", cr.error.message);
+      } else {
+        setClaims(cr.data || []);
       }
       setLoading(false);
     })();
@@ -334,6 +345,22 @@ function EventPage() {
                 </div>
               )}
             </section>
+            {claims.length > 0 && (
+              <section className="claims-section">
+                <h2>Key Claims</h2>
+                <div className="claims-list">
+                  {claims.map((claim) => (
+                    <div className="claim-card" key={claim.id}>
+                      <p className="claim-text">{claim.text}</p>
+                      <div className="claim-meta">
+                        <span>{claim.article_count} article{claim.article_count !== 1 ? "s" : ""}</span>
+                        <span>{claim.source_count} source{claim.source_count !== 1 ? "s" : ""}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </>
         )}
       </main>
