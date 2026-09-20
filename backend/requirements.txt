@@ -3,3 +3,4 @@ supabase==2.27.0
 python-dotenv==1.1.1
 pydantic==2.13.4
 beautifulsoup4==4.15.0
+trafilatura==2.2.0
