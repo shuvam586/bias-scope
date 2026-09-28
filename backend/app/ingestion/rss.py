@@ -1,7 +1,10 @@
+import re
 import requests
 import trafilatura
 import feedparser as fp
+from html import unescape
 from datetime import datetime 
+from dateutil.parser import parse
 from pydantic import BaseModel, HttpUrl
 
 
@@ -14,6 +17,37 @@ class Article(BaseModel):
     published_at: datetime | None = None
     source: str
     cluster: str | None
+
+
+BAD_PATTERNS = [
+    r"^login$",
+    r"^sign in$",
+    r"^subscribe",
+    r"^advertisement",
+    r"^also read",
+    r"^latest news$",
+    r"^photos?$",
+    r"^videos?$",
+    r"\d{1,2}\s([a-z]|[A-Z])+\s\d{1,4}"
+]
+
+
+def is_bad_title(title: str) -> bool:
+    title = title.strip()
+
+    # Obvious boilerplate
+    if any(re.search(pattern, title, re.IGNORECASE) for pattern in BAD_PATTERNS):
+        return True
+
+    # Date-like title
+    try:
+        parse(title, fuzzy=False)
+        return True
+    except (ValueError, TypeError, OverflowError):
+        pass
+
+    return False
+
 
 def extract_article_text(article_url: str) -> str | None:
     headers = {
@@ -58,6 +92,9 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
 
     for entry in feed.entries:
 
+        if is_bad_title(entry.get("title")):
+            continue
+
         og_desc = entry.get("summary")
         full_desc = extract_article_text(entry.get("link"))
 
@@ -81,7 +118,9 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
                 except:
                     better_date = datetime.now()
 
-        better_title = entry.get("title")
+        better_title = unescape(entry.get("title")).strip()
+        better_title = re.sub(r"<[^>]+>", "", better_title)
+        better_title = re.sub(r"\s+", " ", better_title).strip()
         
         if (google_news):
             better_title = better_title[::-1].split("- ")[1][::-1]

@@ -28,11 +28,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r ml/requirements.txt
 
-      - name: Cache Hugging Face model
+      - name: Cache Hugging Face models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: huggingface-${{ runner.os }}-all-MiniLM-L6-v2
+          key: huggingface-${{ runner.os }}-all-MiniLM-L6-v2-SmolLM2-135M-Instruct
 
       - name: Run article pipeline
         env:
@@ -46,4 +46,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python -m backend.app.claims_analysis
+          python -m backend.app.claim_analysis

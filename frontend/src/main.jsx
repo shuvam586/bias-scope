@@ -282,6 +282,10 @@ function EventPage() {
   const publishedTime = articles.length ? time(articles[articles.length - 1].published_at) : null;
   const updatedTime = articles.length ? time(articles[0].published_at) : null;
 
+  const filteredClaims = claims
+    .filter(c => c.article_count > 1 && c.source_count > 1)
+    .slice(0, 5);
+
   return (
     <>
     <Header />
@@ -345,11 +349,11 @@ function EventPage() {
                 </div>
               )}
             </section>
-            {claims.length > 0 && (
+            {filteredClaims.length > 0 && (
               <section className="claims-section">
                 <h2>Key Claims</h2>
                 <div className="claims-list">
-                  {claims.map((claim) => (
+                  {filteredClaims.map((claim) => (
                     <div className="claim-card" key={claim.id}>
                       <p className="claim-text">{claim.text}</p>
                       <div className="claim-meta">

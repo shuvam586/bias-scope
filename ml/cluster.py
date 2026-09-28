@@ -1,17 +1,19 @@
 import os
 import re
+import torch
 import hdbscan
 import numpy as np
 import pandas as pd
 
 from pathlib import Path
-from datetime import datetime
 from uuid import uuid4
+from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client
 from pydantic import BaseModel, HttpUrl
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 load_dotenv()
 
@@ -51,6 +53,7 @@ class ClaimSentence(BaseModel):
     similarity: float
 
 MODEL_NAME = "all-MiniLM-L6-v2"
+GENERATION_MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 HDBSCAN_MIN_CLUSTER_SIZE = 2
 HDBSCAN_MIN_SAMPLES = 1
@@ -60,7 +63,67 @@ TIME_WEIGHT = 0.10
 
 TIME_DECAY_DAYS = 30
 
-model = SentenceTransformer(MODEL_NAME)
+
+tokenizer = AutoTokenizer.from_pretrained(GENERATION_MODEL_NAME)
+gen_model = AutoModelForCausalLM.from_pretrained(
+    GENERATION_MODEL_NAME,
+    dtype=torch.float32
+)
+gen_model.eval()
+
+clust_model = SentenceTransformer(MODEL_NAME)
+
+
+def generate_heading(titles: list[str]) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a news headline editor. "
+                "Given multiple headlines about the same event, "
+                "write ONE concise, neutral, factual headline. "
+                "Preserve the central event and important entities. "
+                "Use only information supported by the input headlines. "
+                "Do not add speculation, opinions, or unnecessary details. "
+                "Return only the headline text. No quotes, no explanations, no bullet points."
+            )
+        },
+        {
+            "role": "user",
+            "content": "Article headlines:\n" + "\n".join(
+                f"- {title}" for title in titles
+            ) + "\n\nHeadline:"
+        }
+    ]
+
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt",
+        return_dict=True
+    )
+
+    input_ids = inputs["input_ids"]
+
+    with torch.inference_mode():
+        outputs = gen_model.generate(
+            input_ids,
+            max_new_tokens=30,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+
+    generated = outputs[0, input_ids.shape[-1]:]
+    result = tokenizer.decode(
+        generated, skip_special_tokens=True
+    ).strip()
+    
+    # Take only the first line, remove any leading dash/bullet
+    result = result.split('\n')[0].lstrip('- ').strip()
+    result = result.strip("\"\':;.?")
+    return result
 
 
 def clean_text(text):
@@ -139,7 +202,7 @@ def cluster_articles(articles: list[Article]) -> dict:
     article_embeddings = []
 
     for _, row in df.iterrows():
-        embedding = model.encode(
+        embedding = clust_model.encode(
             row["title"],
             show_progress_bar=False
         )
@@ -259,41 +322,41 @@ def cluster_articles(articles: list[Article]) -> dict:
             ].tolist()
         )
 
-        cluster_embeddings = (
-            article_embeddings[
-                cluster_indices
-            ]
-        )
+        # Collect all titles in this cluster
+        cluster_titles = df.loc[cluster_indices, "title"].tolist()
 
-        centroid = np.mean(
-            cluster_embeddings,
-            axis=0
-        )
-
-        centroid_similarity = cosine_similarity(
-            cluster_embeddings,
-            centroid.reshape(1, -1)
-        ).flatten()
-
-        best_position = np.argmax(
-            centroid_similarity
-        )
-
-        best_index = (
-            cluster_indices[best_position]
-        )
+        # Generate synthesized headline using the LLM
+        try:
+            generated_title = generate_heading(cluster_titles)
+        except Exception as e:
+            print(f"Warning: Failed to generate heading for cluster {cluster_number}: {e}")
+            # Fallback: use the first title
+            generated_title = cluster_titles[0] if cluster_titles else "Untitled Event"
 
         cluster_names[
             cluster_number
-        ] = df.loc[
-            best_index,
-            "title"
-        ]
+        ] = generated_title
 
     df["cluster_name"] = (
         df["cluster_number"]
         .map(cluster_names)
     )
+
+    # Keep only top 50 clusters by article count
+    MAX_CLUSTERS = 50
+    cluster_sizes = df["cluster_number"].value_counts()
+    top_clusters = cluster_sizes.head(MAX_CLUSTERS).index.tolist()
+    df = df[df["cluster_number"].isin(top_clusters)].copy()
+    df = df.reset_index(drop=True)
+
+    # Re-map cluster numbers to be sequential after filtering
+    remaining_clusters = sorted(df["cluster_number"].unique())
+    cluster_remap = {old: new for new, old in enumerate(remaining_clusters, start=1)}
+    df["cluster_number"] = df["cluster_number"].map(cluster_remap)
+
+    # Filter cluster_names to only include kept clusters
+    kept_names = {cluster_remap[k]: v for k, v in cluster_names.items() if k in top_clusters}
+    cluster_names = kept_names
 
     event_ids = {
         cluster_number: str(uuid4())
@@ -397,7 +460,7 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
     # Generate embeddings for all claim sentences
     embeddings = []
     for _, row in df.iterrows():
-        emb = model.encode(row["text"], show_progress_bar=False)
+        emb = clust_model.encode(row["text"], show_progress_bar=False)
         embeddings.append(emb)
     embeddings = np.array(embeddings)
 
