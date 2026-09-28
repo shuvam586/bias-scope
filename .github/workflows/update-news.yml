@@ -41,7 +41,7 @@ jobs:
         run: |
           python -m backend.app.article_pipeline
 
-      - name: Run claims analysis
+      - name: Run claim analysis
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
