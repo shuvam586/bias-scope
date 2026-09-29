@@ -120,6 +120,7 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
 
         better_title = unescape(entry.get("title")).strip()
         better_title = re.sub(r"<[^>]+>", "", better_title)
+        better_title = re.sub(r"\s\|\s\w*", "", better_title)
         better_title = re.sub(r"\s+", " ", better_title).strip()
         
         if (google_news):

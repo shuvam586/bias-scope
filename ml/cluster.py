@@ -1,21 +1,19 @@
 import os
 import re
-import torch
 import hdbscan
 import numpy as np
 import pandas as pd
-
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 from dotenv import load_dotenv
-from supabase import create_client
 from pydantic import BaseModel, HttpUrl
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from groq import Groq
 
 load_dotenv()
+
 
 
 class Article(BaseModel):
@@ -52,8 +50,9 @@ class ClaimSentence(BaseModel):
     text: str
     similarity: float
 
+
 MODEL_NAME = "all-MiniLM-L6-v2"
-GENERATION_MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 HDBSCAN_MIN_CLUSTER_SIZE = 2
 HDBSCAN_MIN_SAMPLES = 1
@@ -63,15 +62,10 @@ TIME_WEIGHT = 0.10
 
 TIME_DECAY_DAYS = 30
 
-
-tokenizer = AutoTokenizer.from_pretrained(GENERATION_MODEL_NAME)
-gen_model = AutoModelForCausalLM.from_pretrained(
-    GENERATION_MODEL_NAME,
-    dtype=torch.float32
-)
-gen_model.eval()
+MAX_CLUSTERS = 50
 
 clust_model = SentenceTransformer(MODEL_NAME)
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 def generate_heading(titles: list[str]) -> str:
@@ -79,13 +73,17 @@ def generate_heading(titles: list[str]) -> str:
         {
             "role": "system",
             "content": (
-                "You are a news headline editor. "
-                "Given multiple headlines about the same event, "
-                "write ONE concise, neutral, factual headline. "
-                "Preserve the central event and important entities. "
-                "Use only information supported by the input headlines. "
-                "Do not add speculation, opinions, or unnecessary details. "
-                "Return only the headline text. No quotes, no explanations, no bullet points."
+                "You are a professional news headline editor. "
+                "Given multiple headlines covering the same event, synthesize them into ONE concise, "
+                "neutral, and factually accurate headline. "
+                "Capture the central event and preserve the most important entities, actions, and outcomes. "
+                "Use only information explicitly supported by the input headlines. "
+                "Do not introduce assumptions, speculation, opinions, or information not present in the inputs. "
+                "Avoid redundancy, unnecessary details, sensationalism, and clickbait. "
+                "Keep the headline clear, natural, and grammatically correct. "
+                "The headline MUST contain fewer than 20 words. "
+                "Prioritize brevity without sacrificing essential information. "
+                "Return only the headline text, with no quotation marks, explanations, or bullet points."
             )
         },
         {
@@ -96,33 +94,21 @@ def generate_heading(titles: list[str]) -> str:
         }
     ]
 
-    inputs = tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=True,
-        return_tensors="pt",
-        return_dict=True
+    response = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        max_completion_tokens=512,
+        temperature=0.2,
+        reasoning_effort="low",
     )
 
-    input_ids = inputs["input_ids"]
+    print(response.choices[0])
 
-    with torch.inference_mode():
-        outputs = gen_model.generate(
-            input_ids,
-            max_new_tokens=30,
-            do_sample=False,
-            pad_token_id=tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-        )
+    result = response.choices[0].message.content.strip()
 
-    generated = outputs[0, input_ids.shape[-1]:]
-    result = tokenizer.decode(
-        generated, skip_special_tokens=True
-    ).strip()
-    
     # Take only the first line, remove any leading dash/bullet
-    result = result.split('\n')[0].lstrip('- ').strip()
-    result = result.strip("\"\':;.?")
+    # result = result.split('\n')[0].lstrip('- ').strip()
+    # result = result.strip("\"\':;.?")
     return result
 
 
@@ -130,8 +116,6 @@ def clean_text(text):
     text = re.sub(r"<[^>]+>", " ", str(text))
     text = re.sub(r"https?://\S+|www\.\S+", " ", text)
     text = re.sub(r"\s+", " ", text)
-
-    # print("Text Cleaned")
     return text.strip()
 
 
@@ -343,7 +327,6 @@ def cluster_articles(articles: list[Article]) -> dict:
     )
 
     # Keep only top 50 clusters by article count
-    MAX_CLUSTERS = 50
     cluster_sizes = df["cluster_number"].value_counts()
     top_clusters = cluster_sizes.head(MAX_CLUSTERS).index.tolist()
     df = df[df["cluster_number"].isin(top_clusters)].copy()
@@ -418,7 +401,7 @@ def cluster_articles(articles: list[Article]) -> dict:
             "Event:",
             row["cluster_name"]
         )
-        
+
         print()
 
     return {
@@ -512,7 +495,7 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
         cluster_df = df[cluster_mask]
         unique_sources = set()
         unique_articles = set()
-        
+
         # Need to get source info from original claim_sentences
         for idx in cluster_indices:
             orig_cs = claim_sentences[idx]
@@ -536,7 +519,7 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
     for idx, row in df.iterrows():
         cluster_id = row["cluster_id"]
         claim_id = claim_id_map[cluster_id]
-        
+
         # Calculate similarity to cluster centroid
         cluster_mask = df["cluster_id"] == cluster_id
         cluster_indices = df.index[cluster_mask].tolist()
@@ -557,3 +540,23 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
         "claims": claims,
         "claim_sentences": updated_claim_sentences
     }
+
+
+# if __name__ == "__main__":
+#     test_titles = [
+#         "Banks open today? Why 3-day bank strike has been deferred by unions; all you want to know",
+#         "Former banker accuses bank union of 'betrayal' as 3-day strike gets deferred: 'Who will return their Sunday?'",
+#         "Bank unions defer three-day nationwide strike after 'understandings reached' with IBA",
+#         "Banks to remain open on Monday as unions defer three-day nationwide strike",
+#         "Bank strike deferred after association agrees to panel on five-day banking week"
+#     ]
+#     print("Testing generate_heading...")
+#     if not os.getenv("GROQ_API_KEY"):
+#         print("GROQ_API_KEY not set - skipping API test")
+#     else:
+#         try:
+#             result = generate_heading(test_titles)
+#             print(result)
+#             # print(f"Generated: {result}")
+#         except Exception as e:
+#             print(f"API test failed: {e}")

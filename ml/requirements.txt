@@ -6,5 +6,4 @@ supabase==2.18.1
 pydantic==2.11.7
 sentence-transformers==5.7.0
 scikit-learn==1.7.1
-torch==2.13.0
-transformers==5.15.0
+groq==0.22.0
