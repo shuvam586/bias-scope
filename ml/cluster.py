@@ -73,17 +73,21 @@ def generate_heading(titles: list[str]) -> str:
         {
             "role": "system",
             "content": (
-                "You are a professional news headline editor. "
+                "You are a professional editor for a news aggregation platform. "
                 "Given multiple headlines covering the same event, synthesize them into ONE concise, "
-                "neutral, and factually accurate headline. "
-                "Capture the central event and preserve the most important entities, actions, and outcomes. "
+                "neutral, event-oriented headline. "
+                "Aim for 5-10 words. Use more only when essential for clarity. "
+                "Identify the central event and express it in the simplest possible way. "
+                "Prioritize the main development over secondary details. "
+                "Preserve important names or locations only when necessary to identify the event. "
+                "Omit unnecessary figures, dates, background information, and minor details. "
+                "Avoid repeating information or combining every detail from the input headlines. "
+                "Use neutral, factual language. Avoid sensationalism, speculation, opinions, and clickbait. "
+                "Preserve attribution for allegations and disputed claims. "
                 "Use only information explicitly supported by the input headlines. "
-                "Do not introduce assumptions, speculation, opinions, or information not present in the inputs. "
-                "Avoid redundancy, unnecessary details, sensationalism, and clickbait. "
-                "Keep the headline clear, natural, and grammatically correct. "
-                "The headline MUST contain fewer than 20 words. "
-                "Prioritize brevity without sacrificing essential information. "
-                "Return only the headline text, with no quotation marks, explanations, or bullet points."
+                "Prefer a natural, straightforward headline over a conventional newspaper-style headline. "
+                "The result should read like the title of a news event, not an individual news article. "
+                "Return only the headline, with no quotation marks, explanations, or bullet points."
             )
         },
         {
@@ -542,21 +546,21 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
     }
 
 
-# if __name__ == "__main__":
-#     test_titles = [
-#         "Banks open today? Why 3-day bank strike has been deferred by unions; all you want to know",
-#         "Former banker accuses bank union of 'betrayal' as 3-day strike gets deferred: 'Who will return their Sunday?'",
-#         "Bank unions defer three-day nationwide strike after 'understandings reached' with IBA",
-#         "Banks to remain open on Monday as unions defer three-day nationwide strike",
-#         "Bank strike deferred after association agrees to panel on five-day banking week"
-#     ]
-#     print("Testing generate_heading...")
-#     if not os.getenv("GROQ_API_KEY"):
-#         print("GROQ_API_KEY not set - skipping API test")
-#     else:
-#         try:
-#             result = generate_heading(test_titles)
-#             print(result)
-#             # print(f"Generated: {result}")
-#         except Exception as e:
-#             print(f"API test failed: {e}")
+if __name__ == "__main__":
+    test_titles = [
+        "Banks open today? Why 3-day bank strike has been deferred by unions; all you want to know",
+        "Former banker accuses bank union of 'betrayal' as 3-day strike gets deferred: 'Who will return their Sunday?'",
+        "Bank unions defer three-day nationwide strike after 'understandings reached' with IBA",
+        "Banks to remain open on Monday as unions defer three-day nationwide strike",
+        "Bank strike deferred after association agrees to panel on five-day banking week"
+    ]
+    print("Testing generate_heading...")
+    if not os.getenv("GROQ_API_KEY"):
+        print("GROQ_API_KEY not set - skipping API test")
+    else:
+        try:
+            result = generate_heading(test_titles)
+            print(result)
+            # print(f"Generated: {result}")
+        except Exception as e:
+            print(f"API test failed: {e}")
