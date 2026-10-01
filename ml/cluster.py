@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import hdbscan
 import numpy as np
 import pandas as pd
@@ -102,11 +103,12 @@ def generate_heading(titles: list[str]) -> str:
         model=GROQ_MODEL,
         messages=messages,
         max_completion_tokens=512,
-        temperature=0.2,
-        reasoning_effort="low",
+        temperature=0.2
     )
 
-    print(response.choices[0])
+    time.sleep(3)  # Rate limit: wait 3s between LLM API calls
+
+    print("Total tokens:", response.usage.total_tokens)
 
     result = response.choices[0].message.content.strip()
 
@@ -297,6 +299,18 @@ def cluster_articles(articles: list[Article]) -> dict:
         .map(cluster_number_map)
     )
 
+    # Keep only top 50 clusters by article count
+    cluster_sizes = df["cluster_number"].value_counts()
+    top_clusters = cluster_sizes.head(MAX_CLUSTERS).index.tolist()
+    df = df[df["cluster_number"].isin(top_clusters)].copy()
+    df = df.reset_index(drop=True)
+
+    # Re-map cluster numbers to be sequential after filtering
+    remaining_clusters = sorted(df["cluster_number"].unique())
+    cluster_remap = {old: new for new, old in enumerate(remaining_clusters, start=1)}
+    df["cluster_number"] = df["cluster_number"].map(cluster_remap)
+
+    # Generate synthesized headings only for retained clusters
     cluster_names = {}
 
     for cluster_number in sorted(
@@ -329,21 +343,6 @@ def cluster_articles(articles: list[Article]) -> dict:
         df["cluster_number"]
         .map(cluster_names)
     )
-
-    # Keep only top 50 clusters by article count
-    cluster_sizes = df["cluster_number"].value_counts()
-    top_clusters = cluster_sizes.head(MAX_CLUSTERS).index.tolist()
-    df = df[df["cluster_number"].isin(top_clusters)].copy()
-    df = df.reset_index(drop=True)
-
-    # Re-map cluster numbers to be sequential after filtering
-    remaining_clusters = sorted(df["cluster_number"].unique())
-    cluster_remap = {old: new for new, old in enumerate(remaining_clusters, start=1)}
-    df["cluster_number"] = df["cluster_number"].map(cluster_remap)
-
-    # Filter cluster_names to only include kept clusters
-    kept_names = {cluster_remap[k]: v for k, v in cluster_names.items() if k in top_clusters}
-    cluster_names = kept_names
 
     event_ids = {
         cluster_number: str(uuid4())
