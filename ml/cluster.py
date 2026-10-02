@@ -11,8 +11,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from pydantic import BaseModel, HttpUrl
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-from groq import Groq
 
 load_dotenv()
 
