@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import openai
 import hdbscan
 import numpy as np
 import pandas as pd
@@ -66,7 +67,10 @@ TIME_DECAY_DAYS = 30
 MAX_CLUSTERS = 50
 
 clust_model = SentenceTransformer(MODEL_NAME)
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+openai_client = openai.OpenAI(
+    api_key=os.getenv("NVIDIA_API_KEY"),
+    base_url="https://integrate.api.nvidia.com/v1",
+)
 
 
 def generate_heading(titles: list[str]) -> str:
@@ -99,7 +103,7 @@ def generate_heading(titles: list[str]) -> str:
         }
     ]
 
-    response = groq_client.chat.completions.create(
+    response = openai_client.chat.completions.create(
         model=GROQ_MODEL,
         messages=messages,
         max_completion_tokens=512,
@@ -554,12 +558,10 @@ if __name__ == "__main__":
         "Bank strike deferred after association agrees to panel on five-day banking week"
     ]
     print("Testing generate_heading...")
-    if not os.getenv("GROQ_API_KEY"):
-        print("GROQ_API_KEY not set - skipping API test")
-    else:
-        try:
-            result = generate_heading(test_titles)
-            print(result)
-            # print(f"Generated: {result}")
-        except Exception as e:
-            print(f"API test failed: {e}")
+    
+    try:
+        result = generate_heading(test_titles)
+        print(result)
+        # print(f"Generated: {result}")
+    except Exception as e:
+        print(f"API test failed: {e}")
