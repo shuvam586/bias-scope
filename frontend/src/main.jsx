@@ -196,6 +196,9 @@ function Header() {
 
 function FeaturedEvent({ event }) {
   if (!event) return <EventSkeleton featured />;
+  const latestArticleTime = event.articles?.length
+    ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
+    : null;
   return (
     <Link
       to={`/event/${event.id}`}
@@ -212,14 +215,11 @@ function FeaturedEvent({ event }) {
       ) : null}
       <div className="featured-overlay">
         <div className="featured-kicker">
-          <time className="featured-time">{time(event.updated_at || event.created_at)}</time>
+          <time className="featured-time">{latestArticleTime ? time(new Date(latestArticleTime)) : time(event.updated_at || event.created_at)}</time>
         </div>
         <h2 id="featured-title" className="featured-title">{event.title}</h2>
         <p className="featured-summary">{event.summary || "Follow this developing story and read coverage from all linked sources."}</p>
         <div className="featured-meta">
-          <span>
-            → {event.articles_count || event.articles?.length || 0} articles
-          </span>
           <span>
             → {event.sources_count || 0} sources
           </span>
@@ -232,6 +232,9 @@ function FeaturedEvent({ event }) {
 function CompactEvent({ event }) {
   if (!event) return <EventSkeleton />;
   const hasImage = event.image && event.image !== "https://picsum.photos/400/300";
+  const latestArticleTime = event.articles?.length
+    ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
+    : null;
   return (
     <Link
       to={`/event/${event.id}`}
@@ -242,14 +245,11 @@ function CompactEvent({ event }) {
       <div className="compact-content">
         <div className="compact-header">
           <div className="compact-kicker">
-            <time className="compact-time">{time(event.updated_at || event.created_at)}</time>
+            <time className="compact-time">{latestArticleTime ? time(new Date(latestArticleTime)) : time(event.updated_at || event.created_at)}</time>
           </div>
           <h3 className="compact-title">{event.title}</h3>
         </div>
         <div className="compact-meta">
-          <span>
-            → {event.articles_count || event.articles?.length || 0} articles
-          </span>
           <span>
             → {event.sources_count || 0} sources
           </span>
@@ -390,6 +390,7 @@ function EventFeed({ rising = false }) {
     () =>
       [...filtered].sort(
         (a, b) =>
+          (b.sources_count || 0) - (a.sources_count || 0) ||
           (b.articles_count || 0) - (a.articles_count || 0)
       ),
     [filtered]
@@ -460,6 +461,7 @@ function EventPage() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("articles");
 
   useEffect(() => {
     (async () => {
@@ -534,6 +536,10 @@ function EventPage() {
           </article>
           <section className="coverage-section">
             <div className="coverage-header"><Skeleton className="skeleton-text short" /></div>
+            <div className="coverage-tabs">
+              <Skeleton className="skeleton-text" style={{ width: 80, height: 32 }} />
+              <Skeleton className="skeleton-text" style={{ width: 80, height: 32 }} />
+            </div>
             {[...Array(3)].map((_, i) => (
               <Skeleton key={i} className="skeleton-text" style={{ padding: "14px 20px", margin: "0 20px", borderBottom: "1px solid var(--border)" }} />
             ))}
@@ -575,10 +581,10 @@ function EventPage() {
             <img src={event.image} alt="" className="event-hero-img" loading="eager" />
           ) : null}
           <div className="event-hero-header">
-            <span className="event-source-count">
-              <Icon name="arrow" size={10} />
-              {event.sources_count || 0} sources
-            </span>
+            {event.sources_count || 0} sources
+            {(event.articles_count || articles.length) && (event.sources_count || 0) && <span>·</span>}
+            {event.articles_count || articles.length} articles
+            {(event.articles_count || articles.length) && publishedTime && <span>·</span>}
             {publishedTime && <span>Published {publishedTime}</span>}
             {publishedTime && updatedTime && <span>·</span>}
             {updatedTime && <span>Updated {updatedTime}</span>}
@@ -586,9 +592,15 @@ function EventPage() {
           <h1 className="event-hero-title">{event.title}</h1>
           {event.summary && <p className="event-hero-summary">{event.summary}</p>}
           <div className="event-hero-meta">
-            <span>→ {event.articles_count || articles.length} articles</span>
-            <span>→ {event.sources_count || 0} sources</span>
-            <span>→ {event.sources?.join(", ")}</span>
+            <span>
+              → {event.sources?.slice(0, 4).join(", ")}
+              {event.sources_count > 4 && <span> +{event.sources_count - 4} more</span>}
+            </span>
+            <div className="event-tags">
+              <span className="event-tag">Politics</span>
+              <span className="event-tag">Breaking</span>
+              <span className="event-tag">US</span>
+            </div>
           </div>
         </article>
 
@@ -597,36 +609,92 @@ function EventPage() {
             <h2 className="coverage-title" id="coverage-title">Coverage</h2>
             <span className="coverage-count">{articles.length} articles</span>
           </header>
-          <div className="article-list">
-            {articles.length > 0 ? (
-              articles.map((a) => (
-                <a
-                  key={a.id}
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="article-row"
-                >
-                  <div className="article-source-badge">
-                    {(a.source || "N")[0].toUpperCase()}
+          
+          <nav className="coverage-tabs" role="tablist">
+            <button 
+              role="tab" 
+              aria-selected={activeTab === "sources"}
+              className={`coverage-tab ${activeTab === "sources" ? "active" : ""}`}
+              onClick={() => setActiveTab("sources")}
+            >
+              Sources
+            </button>
+            <button 
+              role="tab" 
+              aria-selected={activeTab === "articles"}
+              className={`coverage-tab ${activeTab === "articles" ? "active" : ""}`}
+              onClick={() => setActiveTab("articles")}
+            >
+              Articles
+            </button>
+          </nav>
+
+          <div className="coverage-content" role="tabpanel">
+            {activeTab === "sources" && (
+              <div className="sources-list">
+                {articles.length > 0 ? (
+                  Object.entries(
+                    articles.reduce((acc, article) => {
+                      const source = article.source || "Unknown";
+                      acc[source] = (acc[source] || 0) + 1;
+                      return acc;
+                    }, {})
+                  )
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([source, count]) => (
+                      <div key={source} className="source-row">
+                        <div className="source-badge-main">
+                          {(source || "N")[0].toUpperCase()}
+                        </div>
+                        <div className="source-info">
+                          <span className="source-name">{source}</span>
+                          <span className="source-count">{count} article{count !== 1 ? "s" : ""}</span>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <div className="empty-state" style={{ padding: 32, borderTop: "1px solid var(--border)" }}>
+                    <div className="empty-icon"><Icon name="arrow" size={32} /></div>
+                    <h3 className="empty-title">No sources</h3>
+                    <p className="empty-text">No coverage found for this event</p>
                   </div>
-                  <div className="article-content">
-                    <div className="article-meta">
-                      <span>{a.source}</span>
-                      <time>{time(a.published_at)}</time>
-                    </div>
-                    <h3 className="article-title">{a.title}</h3>
+                )}
+              </div>
+            )}
+
+            {activeTab === "articles" && (
+              <div className="article-list">
+                {articles.length > 0 ? (
+                  articles.map((a) => (
+                    <a
+                      key={a.id}
+                      href={a.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="article-row"
+                    >
+                      <div className="article-source-badge">
+                        {(a.source || "N")[0].toUpperCase()}
+                      </div>
+                      <div className="article-content">
+                        <div className="article-meta">
+                          <span>{a.source}</span>
+                          <time>{time(a.published_at)}</time>
+                        </div>
+                        <h3 className="article-title">{a.title}</h3>
+                      </div>
+                      <button className="article-external" aria-label="Open article">
+                        <Icon name="external" size={16} />
+                      </button>
+                    </a>
+                  ))
+                ) : (
+                  <div className="empty-state" style={{ padding: 32, borderTop: "1px solid var(--border)" }}>
+                    <div className="empty-icon"><Icon name="arrow" size={32} /></div>
+                    <h3 className="empty-title">No articles</h3>
+                    <p className="empty-text">No coverage found for this event</p>
                   </div>
-                  <button className="article-external" aria-label="Open article">
-                    <Icon name="external" size={16} />
-                  </button>
-                </a>
-              ))
-            ) : (
-              <div className="empty-state" style={{ padding: 32, borderTop: "1px solid var(--border)" }}>
-                <div className="empty-icon"><Icon name="arrow" size={32} /></div>
-                <h3 className="empty-title">No articles</h3>
-                <p className="empty-text">No coverage found for this event</p>
+                )}
               </div>
             )}
           </div>
