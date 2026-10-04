@@ -81,7 +81,7 @@ function EventSkeleton({ featured }) {
   if (featured) {
     return (
       <div className="featured-event">
-        <Skeleton className="skeleton-image" style={{ height: 220 }} />
+        <Skeleton className="skeleton-image" style={{ height: 380 }} />
         <div className="featured-overlay">
           <Skeleton className="skeleton-text medium" style={{ width: "30%" }} />
           <Skeleton className="skeleton-title" />
@@ -93,7 +93,7 @@ function EventSkeleton({ featured }) {
   }
   return (
     <div className="compact-event">
-      <Skeleton className="skeleton-thumb" />
+      <Skeleton className="skeleton-image" style={{ height: 160 }} />
       <div className="compact-content">
         <div className="compact-kicker">
           <Skeleton className="skeleton-text" style={{ width: "25%" }} />
@@ -537,8 +537,8 @@ function EventPage() {
           <section className="coverage-section">
             <div className="coverage-header"><Skeleton className="skeleton-text short" /></div>
             <div className="coverage-tabs">
-              <Skeleton className="skeleton-text" style={{ width: 80, height: 32 }} />
-              <Skeleton className="skeleton-text" style={{ width: 80, height: 32 }} />
+              <Skeleton className="skeleton-tab" />
+              <Skeleton className="skeleton-tab" />
             </div>
             {[...Array(3)].map((_, i) => (
               <Skeleton key={i} className="skeleton-text" style={{ padding: "14px 20px", margin: "0 20px", borderBottom: "1px solid var(--border)" }} />
@@ -723,23 +723,316 @@ function EventPage() {
   );
 }
 
+function SourcePage() {
+  const { sourceid } = useParams();
+  const [articles, setArticles] = useState([]);
+  const [sourceInfo, setSourceInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [articlesRes, sourceRes] = await Promise.all([
+          supabase
+            .from("articles")
+            .select("id,title,description,source,published_at,url,cluster")
+            .eq("source", sourceid)
+            .order("published_at", { ascending: false })
+            .limit(100),
+          supabase
+            .from("sources")
+            .select("*")
+            .eq("id", sourceid)
+            .single(),
+        ]);
+
+        if (articlesRes.error) throw articlesRes.error;
+        setArticles(articlesRes.data || []);
+        if (!sourceRes.error) setSourceInfo(sourceRes.data);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [sourceid]);
+
+  if (loading) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="event-page">
+          <div className="page-header">
+            <button className="back-btn" onClick={() => window.history.back()}><Icon name="back" size={14} /> Back</button>
+            <span className="page-title">Source</span>
+          </div>
+          <section className="coverage-section">
+            <div className="coverage-header"><Skeleton className="skeleton-text short" /></div>
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="skeleton-text" style={{ padding: "14px 20px", margin: "0 20px", borderBottom: "1px solid var(--border)" }} />
+            ))}
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="event-page">
+          <div className="page-header">
+            <button className="back-btn" onClick={() => window.history.back()}><Icon name="back" size={14} /> Back</button>
+            <span className="page-title">Source</span>
+          </div>
+          <div className="empty-state" style={{ paddingTop: 60 }}>
+            <div className="empty-icon"><Icon name="arrow" size={48} /></div>
+            <h3 className="empty-title">Couldn't load source</h3>
+            <p className="empty-text">{error}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <Header />
+      <main className="event-page">
+        <div className="page-header">
+          <button className="back-btn" onClick={() => window.history.back()}><Icon name="back" size={14} /> Back</button>
+          <div className="source-header-info">
+            {/* {sourceInfo?.domain && (
+              <div className="source-logo-wrapper">
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${sourceInfo.domain}&sz=128`}
+                  alt=""
+                  className="source-logo-large"
+                  loading="lazy"
+                />
+              </div>
+            )} */}
+            <span className="page-title">Source Detail</span>
+          </div>
+        </div>
+        <section className="coverage-section" aria-labelledby="coverage-title">
+          <header className="coverage-header">
+            <div className="source-header-title">
+              {sourceInfo?.domain && (
+                <div className="source-logo-wrapper">
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${sourceInfo.domain}&sz=128`}
+                    alt=""
+                    className="source-logo-large"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              <h1 className="coverage-title" id="coverage-title">{sourceid}</h1>
+            </div>
+            <span className="coverage-count">{articles.length} articles</span>
+          </header>
+          <div className="article-list">
+            {articles.length > 0 ? (
+              articles.map((a) => (
+                <a
+                  key={a.id}
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="article-row"
+                >
+                  <div className="article-source-badge">
+                    {(a.source || "N")[0].toUpperCase()}
+                  </div>
+                  <div className="article-content">
+                    <div className="article-meta">
+                      <time>{time(a.published_at)}</time>
+                    </div>
+                    <h3 className="article-title">{a.title}</h3>
+                  </div>
+                  <button className="article-external" aria-label="Open article">
+                    <Icon name="external" size={16} />
+                  </button>
+                </a>
+              ))
+            ) : (
+              <div className="empty-state" style={{ padding: 32, borderTop: "1px solid var(--border)" }}>
+                <div className="empty-icon"><Icon name="arrow" size={32} /></div>
+                <h3 className="empty-title">No articles</h3>
+                <p className="empty-text">No articles found for this source</p>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function SourcesPage() {
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Fetch all sources from the sources table
+        const { data: sourcesData, error: sourcesErr } = await supabase
+          .from("sources")
+          .select("*");
+
+        if (sourcesErr) throw sourcesErr;
+
+        // Fetch article counts for each source
+        const sourceNames = (sourcesData || []).map(s => s.id);
+        let articleCounts = {};
+
+        if (sourceNames.length > 0) {
+          const { data: articlesData, error: articlesErr } = await supabase
+            .from("articles")
+            .select("source")
+            .in("source", sourceNames);
+
+          if (articlesErr) throw articlesErr;
+
+          (articlesData || []).forEach((a) => {
+            articleCounts[a.source] = (articleCounts[a.source] || 0) + 1;
+          });
+        }
+
+        const sourceList = (sourcesData || [])
+          .map(s => ({
+            ...s,
+            count: articleCounts[s.id] || 0,
+          }))
+          .sort((a, b) => b.count - a.count);
+
+        setSources(sourceList);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="event-page">
+          <div className="page-header">
+            <span className="page-title">Sources</span>
+          </div>
+          <section className="sources-grid-section" aria-labelledby="sources-title">
+            <div className="column-header">
+              <h2 className="column-title" id="sources-title">All Sources</h2>
+              <Skeleton className="skeleton-text short" />
+            </div>
+            <div className="sources-grid">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="source-card">
+                  <Skeleton className="source-card-logo-skeleton" />
+                  <Skeleton className="skeleton-title" style={{ width: "80%" }} />
+                  <Skeleton className="skeleton-text short" style={{ width: "40%" }} />
+                </div>
+              ))}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="event-page">
+          <div className="page-header">
+            <span className="page-title">Sources</span>
+          </div>
+          <div className="empty-state" style={{ paddingTop: 60 }}>
+            <div className="empty-icon"><Icon name="arrow" size={48} /></div>
+            <h3 className="empty-title">Couldn't load sources</h3>
+            <p className="empty-text">{error}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <Header />
+      <main className="event-page">
+        <div className="page-header">
+          <span className="page-title">Sources</span>
+        </div>
+        <section className="sources-grid-section" aria-labelledby="sources-title">
+          
+          {sources.length > 0 ? (
+            <div className="sources-grid">
+              {sources.map((s) => (
+                <Link
+                  key={s.id}
+                  to={`/source/${encodeURIComponent(s.id)}`}
+                  className="source-card"
+                >
+                  {s.domain ? (
+                    <div className="source-card-logo">
+                      <img
+                        src={`https://www.google.com/s2/favicons?domain=${s.domain}&sz=128`}
+                        alt=""
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div className="source-card-logo-placeholder">
+                      {(s.id || "N")[0].toUpperCase()}
+                    </div>
+                  )}
+                  <h3 className="source-card-name">{s.id}</h3>
+                  <span className="source-card-count">{s.count} article{s.count !== 1 ? "s" : ""}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-title">No sources</div>
+              <div className="empty-text">No sources found</div>
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
 function App() {
   const location = useLocation();
   useEffect(() => {
-    document.body.className = location.pathname.startsWith("/event")
-      ? "page-event"
-      : "page-home";
+    if (location.pathname.startsWith("/event")) {
+      document.body.className = "page-event";
+    } else if (location.pathname.startsWith("/source")) {
+      document.body.className = "page-source";
+    } else if (location.pathname.startsWith("/sources")) {
+      document.body.className = "page-sources";
+    } else {
+      document.body.className = "page-home";
+    }
   }, [location.pathname]);
 
   return (
     <Routes>
       <Route path="/" element={<EventFeed />} />
-      <Route path="/rising" element={<EventFeed rising />} />
-      <Route path="/topics" element={<EventFeed />} />
-      <Route path="/sources" element={<EventFeed />} />
-      <Route path="/blindspot" element={<EventFeed />} />
-      <Route path="/analysis" element={<EventFeed />} />
+      <Route path="/sources" element={<SourcesPage />} />
       <Route path="/event/:eventid" element={<EventPage />} />
+      <Route path="/source/:sourceid" element={<SourcePage />} />
     </Routes>
   );
 }
