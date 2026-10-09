@@ -199,6 +199,9 @@ function FeaturedEvent({ event }) {
   const latestArticleTime = event.articles?.length
     ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
     : null;
+  const percentages = event.bias_percentages || { left: 0, center: 0, right: 0 };
+  const dominant = event.bias_dominant || "Mixed";
+  const dominantPct = dominant !== "Mixed" ? percentages[dominant.toLowerCase()] : 0;
   return (
     <Link
       to={`/event/${event.id}`}
@@ -224,6 +227,14 @@ function FeaturedEvent({ event }) {
             → {event.sources_count || 0} sources
           </span>
         </div>
+        <div className="featured-bias">
+          <div className="featured-bias-bar">
+            <span className="featured-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
+            <span className="featured-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
+            <span className="featured-bias-segment bias-right" style={{ width: `${percentages.right}%` }} />
+          </div>
+          <span className="featured-bias-label">{dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
+        </div>
       </div>
     </Link>
   );
@@ -235,6 +246,9 @@ function CompactEvent({ event }) {
   const latestArticleTime = event.articles?.length
     ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
     : null;
+  const percentages = event.bias_percentages || { left: 0, center: 0, right: 0 };
+  const dominant = event.bias_dominant || "Mixed";
+  const dominantPct = dominant !== "Mixed" ? percentages[dominant.toLowerCase()] : 0;
   return (
     <Link
       to={`/event/${event.id}`}
@@ -253,6 +267,14 @@ function CompactEvent({ event }) {
           <span>
             → {event.sources_count || 0} sources
           </span>
+        </div>
+        <div className="compact-bias">
+          <div className="compact-bias-bar">
+            <span className="compact-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
+            <span className="compact-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
+            <span className="compact-bias-segment bias-right" style={{ width: `${percentages.right}%` }} />
+          </div>
+          <span className="compact-bias-label">{dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
         </div>
       </div>
     </Link>
@@ -357,15 +379,69 @@ function EventFeed({ rising = false }) {
           }
         }
 
+        const allSources = new Set();
+        (eventsData || []).forEach(e => {
+          const sources = sourcesByEvent[e.id] || new Set();
+          sources.forEach(s => allSources.add(s));
+        });
+
+        // Fetch biases for all sources
+        let sourceBiases = {};
+        if (allSources.size > 0) {
+          const { data: sourcesData, error: sourcesErr } = await supabase
+            .from("sources")
+            .select("id,bias")
+            .in("id", Array.from(allSources));
+
+          if (!sourcesErr && sourcesData) {
+            sourceBiases = Object.fromEntries(sourcesData.map(s => [s.id, s.bias]));
+          }
+        }
+
         const processed = (eventsData || []).map((e) => {
           const articles = articlesByEvent[e.id] || [];
           const sources = sourcesByEvent[e.id] || new Set();
+          
+          // Calculate bias distribution for this event
+          const counts = { left: 0, center: 0, right: 0, unknown: 0 };
+          articles.forEach(a => {
+            const bias = sourceBiases[a.source];
+            if (bias === -69 || bias === null || bias === undefined) {
+              counts.unknown++;
+            } else if (bias >= -10 && bias < -3.5) {
+              counts.left++;
+            } else if (bias >= -3.5 && bias <= 3.5) {
+              counts.center++;
+            } else if (bias > 3.5 && bias <= 10) {
+              counts.right++;
+            } else {
+              counts.unknown++;
+            }
+          });
+          const totalBiased = counts.left + counts.center + counts.right;
+          const percentages = totalBiased > 0 ? {
+            left: Math.round((counts.left / totalBiased) * 100),
+            center: Math.round((counts.center / totalBiased) * 100),
+            right: Math.round((counts.right / totalBiased) * 100),
+          } : { left: 0, center: 0, right: 0 };
+          
+          // Determine dominant bias
+          let dominant = "Mixed";
+          if (totalBiased > 0) {
+            const max = Math.max(percentages.left, percentages.center, percentages.right);
+            if (percentages.left === max) dominant = "Left";
+            else if (percentages.center === max) dominant = "Center";
+            else if (percentages.right === max) dominant = "Right";
+          }
+
           return {
             ...e,
             articles,
             articles_count: articles.length,
             sources: Array.from(sources),
             sources_count: sources.size,
+            bias_percentages: percentages,
+            bias_dominant: dominant,
           };
         });
 
@@ -459,6 +535,7 @@ function EventPage() {
   const [event, setEvent] = useState();
   const [articles, setArticles] = useState([]);
   const [claims, setClaims] = useState([]);
+  const [sourceBiases, setSourceBiases] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("articles");
@@ -492,6 +569,19 @@ function EventPage() {
         // Compute sources from articles
         const sources = [...new Set(articlesData.map((a) => a.source).filter(Boolean))];
 
+        // Fetch bias for each source
+        let biases = {};
+        if (sources.length > 0) {
+          const { data: sourcesData, error: sourcesErr } = await supabase
+            .from("sources")
+            .select("id,bias")
+            .in("id", sources);
+
+          if (!sourcesErr && sourcesData) {
+            biases = Object.fromEntries(sourcesData.map(s => [s.id, s.bias]));
+          }
+        }
+
         // Attach computed fields to event
         const enrichedEvent = {
           ...eventData,
@@ -502,6 +592,7 @@ function EventPage() {
 
         setEvent(enrichedEvent);
         setArticles(articlesData);
+        setSourceBiases(biases);
         if (cr.error) console.error("Claims fetch error:", cr.error.message);
         else setClaims(cr.data || []);
       } catch (e) {
@@ -511,6 +602,33 @@ function EventPage() {
       }
     })();
   }, [eventid]);
+
+  // Calculate bias distribution based on article counts per source
+  const biasDistribution = useMemo(() => {
+    const counts = { left: 0, center: 0, right: 0, unknown: 0 };
+    articles.forEach(a => {
+      const bias = sourceBiases[a.source];
+      if (bias === -69 || bias === null || bias === undefined) {
+        counts.unknown++;
+      } else if (bias >= -10 && bias < -3.5) {
+        counts.left++;
+      } else if (bias >= -3.5 && bias <= 3.5) {
+        counts.center++;
+      } else if (bias > 3.5 && bias <= 10) {
+        counts.right++;
+      } else {
+        counts.unknown++;
+      }
+    });
+    return counts;
+  }, [articles, sourceBiases]);
+
+  const totalBiased = biasDistribution.left + biasDistribution.center + biasDistribution.right;
+  const biasPercentages = totalBiased > 0 ? {
+    left: Math.round((biasDistribution.left / totalBiased) * 100),
+    center: Math.round((biasDistribution.center / totalBiased) * 100),
+    right: Math.round((biasDistribution.right / totalBiased) * 100),
+  } : { left: 0, center: 0, right: 0 };
 
   const publishedTime = articles.length ? time(articles[articles.length - 1].published_at) : null;
   const updatedTime = articles.length ? time(articles[0].published_at) : null;
@@ -581,13 +699,28 @@ function EventPage() {
             <img src={event.image} alt="" className="event-hero-img" loading="eager" />
           ) : null}
           <div className="event-hero-header">
-            {event.sources_count || 0} sources
-            {(event.articles_count || articles.length) && (event.sources_count || 0) && <span>·</span>}
-            {event.articles_count || articles.length} articles
-            {(event.articles_count || articles.length) && publishedTime && <span>·</span>}
-            {publishedTime && <span>Published {publishedTime}</span>}
-            {publishedTime && updatedTime && <span>·</span>}
-            {updatedTime && <span>Updated {updatedTime}</span>}
+            <div className="event-hero-bias" aria-label="Bias distribution">
+              <span className="bias-bar">
+                <span className="bias-segment bias-left" style={{ width: `${biasPercentages.left}%` }}>
+                  {biasPercentages.left > 0 && <span className="bias-segment-text">Left {biasPercentages.left}%</span>}
+                </span>
+                <span className="bias-segment bias-center" style={{ width: `${biasPercentages.center}%` }}>
+                  {biasPercentages.center > 0 && <span className="bias-segment-text">Center {biasPercentages.center}%</span>}
+                </span>
+                <span className="bias-segment bias-right" style={{ width: `${biasPercentages.right}%` }}>
+                  {biasPercentages.right > 0 && <span className="bias-segment-text">Right {biasPercentages.right}%</span>}
+                </span>
+              </span>
+            </div>
+            <div className="event-hero-meta-line">
+              {event.sources_count || 0} sources
+              {(event.articles_count || articles.length) && (event.sources_count || 0) && <span>·</span>}
+              {event.articles_count || articles.length} articles
+              {(event.articles_count || articles.length) && publishedTime && <span>·</span>}
+              {publishedTime && <span>Published {publishedTime}</span>}
+              {publishedTime && updatedTime && <span>·</span>}
+              {updatedTime && <span>Updated {updatedTime}</span>}
+            </div>
           </div>
           <h1 className="event-hero-title">{event.title}</h1>
           {event.summary && <p className="event-hero-summary">{event.summary}</p>}

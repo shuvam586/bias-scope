@@ -561,6 +561,17 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
 
     df["cluster_id"] = labels
 
+    # Keep only top 50 clusters by sentence count (like cluster_articles)
+    cluster_sizes = df["cluster_id"].value_counts()
+    top_clusters = cluster_sizes.head(MAX_CLUSTERS).index.tolist()
+    df = df[df["cluster_id"].isin(top_clusters)].copy()
+    df = df.reset_index(drop=True)
+
+    # Re-map cluster IDs to be sequential after filtering
+    remaining_clusters = sorted(df["cluster_id"].unique())
+    cluster_remap = {old: new for new, old in enumerate(remaining_clusters, start=1)}
+    df["cluster_id"] = df["cluster_id"].map(cluster_remap)
+
     # Create Claim objects from clusters using LLM validation & canonicalization
     claims = []
     claim_id_map = {}

@@ -94,6 +94,10 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
     for entry in feed.entries:
 
         better_url = entry.get("link")
+        better_title = unescape(entry.get("title")).strip()
+        better_title = re.sub(r"<[^>]+>", "", better_title)
+        better_title = re.sub(r"\s\|\s\w*", "", better_title)
+        better_title = re.sub(r"\s+", " ", better_title).strip()
         
         if (google_news):
             better_title = better_title[::-1].split("- ")[1][::-1]
@@ -126,10 +130,6 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
                 except:
                     better_date = datetime.now()
 
-        better_title = unescape(entry.get("title")).strip()
-        better_title = re.sub(r"<[^>]+>", "", better_title)
-        better_title = re.sub(r"\s\|\s\w*", "", better_title)
-        better_title = re.sub(r"\s+", " ", better_title).strip()
         
 
         article = Article(
