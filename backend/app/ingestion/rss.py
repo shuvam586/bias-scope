@@ -6,6 +6,7 @@ from html import unescape
 from datetime import datetime 
 from dateutil.parser import parse
 from pydantic import BaseModel, HttpUrl
+from googlenewsdecoder import gnewsdecoder
 
 
 class Article(BaseModel):
@@ -122,15 +123,17 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
         better_title = re.sub(r"<[^>]+>", "", better_title)
         better_title = re.sub(r"\s\|\s\w*", "", better_title)
         better_title = re.sub(r"\s+", " ", better_title).strip()
+        better_url = entry.get("link")
         
         if (google_news):
             better_title = better_title[::-1].split("- ")[1][::-1]
             better_desc = better_title
+            better_url = gnewsdecoder(better_url)["decoded_url"]
 
         article = Article(
             id=None,
             title=better_title,
-            url=entry.get("link"),
+            url=better_url,
             description=better_desc,
             author=entry.get("author"),
             published_at=better_date,

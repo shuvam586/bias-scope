@@ -5,3 +5,5 @@ pydantic==2.13.4
 beautifulsoup4==4.15.0
 trafilatura==2.2.0
 python-dateutil==2.9.0.post0
+googlenewsdecoder==0.2.1
+selectolax==0.4.13
