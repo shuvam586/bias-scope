@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import json
 import openai
 import hdbscan
 import numpy as np
@@ -118,6 +119,87 @@ def generate_heading(titles: list[str]) -> str:
     # Take only the first line, remove any leading dash/bullet
     # result = result.split('\n')[0].lstrip('- ').strip()
     # result = result.strip("\"\':;.?")
+    return result
+
+
+def validate_and_canonicalize_claims(sentences: list[str]) -> dict | None:
+    """
+    Validate claims, check equivalence, and generate canonical claim in one LLM call.
+    
+    Returns:
+        dict with keys: 'is_valid_claim' (bool), 'are_equivalent' (bool), 
+        'canonical_claim' (str or None), 'reasoning' (str)
+        Returns None if the cluster should be discarded (no valid claims or not equivalent)
+    """
+    if not sentences:
+        return None
+    
+    # Format sentences for the prompt
+    sentences_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(sentences))
+
+    # print("msg er age troll")
+    
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a fact-checking analyst for a news aggregation platform. "
+                "Given multiple sentences from news articles that were clustered by semantic similarity, "
+                "perform THREE tasks in a single analysis:\n\n"
+                "1. CLAIM VALIDITY: Does each sentence express a meaningful factual assertion? "
+                "A factual assertion is a verifiable claim about the world (who did what, what happened, "
+                "statistics, quotes attributable to a source, etc.). "
+                "Discard: opinions, speculation, questions, vague statements, rhetorical flourishes, "
+                "sentence fragments, or purely contextual/background information.\n\n"
+                "2. EQUIVALENCE CHECK: Do ALL valid factual assertions express the SAME core fact? "
+                "They are equivalent if they make the same claim about the same entities/events, "
+                "even if wording differs. They are NOT equivalent if they:\n"
+                "   - Contradict each other\n"
+                "   - Make distinct claims (even if related)\n"
+                "   - One is a subset/generalization of another without being the same claim\n\n"
+                "3. CANONICAL CLAIM GENERATION: If sentences are equivalent, produce ONE concise, "
+                "normalized claim that captures the shared factual assertion. "
+                "Rules for canonical claim:\n"
+                "   - 15-30 words, single sentence\n"
+                "   - Neutral, factual language\n"
+                "   - Include key entities (who, what, where) and the core assertion\n"
+                "   - Preserve attribution for allegations/disputed claims (\"X claims that...\")\n"
+                "   - Omit redundant details, dates, background\n"
+                "   - No quotation marks, no bullet points\n\n"
+                "OUTPUT FORMAT (JSON only):\n"
+                "{\n"
+                "  \"valid_sentence_indices\": [1, 3, 4],\n"
+                "  \"are_equivalent\": true,\n"
+                "  \"canonical_claim\": \"Canonical claim text here\",\n"
+                "  \"reasoning\": \"Brief explanation of validity, equivalence, and canonical form\"\n"
+                "}\n\n"
+                "If NO valid factual assertions: return {\"valid_sentence_indices\": [], \"are_equivalent\": false, \"canonical_claim\": null, \"reasoning\": \"...\"}\n"
+                "If valid assertions exist but are NOT equivalent: return {\"valid_sentence_indices\": [...], \"are_equivalent\": false, \"canonical_claim\": null, \"reasoning\": \"...\"}\n"
+                "Only return canonical_claim when are_equivalent is true."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"Sentences:\n{sentences_text}\n\nAnalyze and return JSON:"
+        }
+    ]
+
+    response = openai_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        max_completion_tokens=512,
+        temperature=0.1,
+        response_format={"type": "json_object"}
+    )
+
+    # print("msg er pore troll")
+
+    time.sleep(3)  # Rate limit
+
+    print("Total tokens (claim validation):", response.usage.total_tokens)
+
+    import json
+    result = json.loads(response.choices[0].message.content.strip())
     return result
 
 
@@ -429,7 +511,7 @@ CLAIM_HDBSCAN_MIN_SAMPLES = 1
 
 def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
     """
-    Cluster claim sentences by semantic similarity.
+    Cluster claim sentences by semantic similarity, then validate and canonicalize each cluster via LLM.
     Returns dict with 'claims' (list of Claim) and 'claim_sentences' (list of ClaimSentence with cluster assignments).
     """
     if not claim_sentences:
@@ -479,54 +561,77 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
 
     df["cluster_id"] = labels
 
-    # Create Claim objects from clusters
+    # Create Claim objects from clusters using LLM validation & canonicalization
     claims = []
     claim_id_map = {}
+    valid_cluster_ids = set()
 
     for cluster_id in sorted(df["cluster_id"].unique()):
         cluster_mask = df["cluster_id"] == cluster_id
         cluster_indices = df.index[cluster_mask].tolist()
-        cluster_embeddings = embeddings[cluster_indices]
-
-        # Centroid
-        centroid = np.mean(cluster_embeddings, axis=0)
-        centroid_similarities = cosine_similarity(cluster_embeddings, centroid.reshape(1, -1)).flatten()
-
-        # Representative sentence (closest to centroid)
-        best_pos = np.argmax(centroid_similarities)
-        best_idx = cluster_indices[best_pos]
-        representative_text = df.loc[best_idx, "text"]
-
-        # Collect unique sources and articles
-        cluster_df = df[cluster_mask]
+        
+        # Get sentences for this cluster
+        cluster_sentences = df.loc[cluster_indices, "text"].tolist()
+        
+        # LLM validation: check validity, equivalence, generate canonical claim
+        try:
+            llm_result = validate_and_canonicalize_claims(cluster_sentences)
+        except Exception as e:
+            print(f"Warning: LLM validation failed for cluster {cluster_id}: {e}")
+            continue
+        
+        if not llm_result:
+            continue
+            
+        valid_indices = llm_result.get("valid_sentence_indices", [])
+        are_equivalent = llm_result.get("are_equivalent", False)
+        canonical_claim = llm_result.get("canonical_claim")
+        
+        # Discard cluster if no valid claims or not equivalent
+        if not valid_indices or not are_equivalent or not canonical_claim:
+            print(f"Cluster {cluster_id} discarded: valid={len(valid_indices)}, equivalent={are_equivalent}")
+            continue
+        
+        # Map 1-based indices back to dataframe indices
+        valid_df_indices = [cluster_indices[i-1] for i in valid_indices if 1 <= i <= len(cluster_indices)]
+        
+        if not valid_df_indices:
+            continue
+        
+        # Collect unique sources and articles from VALID sentences only
         unique_sources = set()
         unique_articles = set()
-
-        # Need to get source info from original claim_sentences
-        for idx in cluster_indices:
+        for idx in valid_df_indices:
             orig_cs = claim_sentences[idx]
             if orig_cs.article:
                 unique_articles.add(orig_cs.article)
                 unique_sources.add(orig_cs.source)
-
+        
         claim_id = str(uuid4())
         claim_id_map[cluster_id] = claim_id
+        valid_cluster_ids.add(cluster_id)
 
         claims.append(Claim(
             id=claim_id,
             event=None,  # Could be linked later if needed
-            text=representative_text,
+            text=canonical_claim,  # LLM-generated canonical claim
             source_count=len(unique_sources),
             article_count=len(unique_articles)
         ))
 
     # Update claim_sentences with cluster assignments and similarities
+    # Only keep sentences from valid clusters
     updated_claim_sentences = []
     for idx, row in df.iterrows():
         cluster_id = row["cluster_id"]
+        
+        # Skip sentences from discarded clusters
+        if cluster_id not in valid_cluster_ids:
+            continue
+            
         claim_id = claim_id_map[cluster_id]
 
-        # Calculate similarity to cluster centroid
+        # Calculate similarity to cluster centroid (for compatibility)
         cluster_mask = df["cluster_id"] == cluster_id
         cluster_indices = df.index[cluster_mask].tolist()
         cluster_embeddings = embeddings[cluster_indices]
@@ -548,19 +653,61 @@ def cluster_claims(claim_sentences: list[ClaimSentence]) -> dict:
     }
 
 
+# this is here just to test this out
 if __name__ == "__main__":
-    test_titles = [
-        "Banks open today? Why 3-day bank strike has been deferred by unions; all you want to know",
-        "Former banker accuses bank union of 'betrayal' as 3-day strike gets deferred: 'Who will return their Sunday?'",
-        "Bank unions defer three-day nationwide strike after 'understandings reached' with IBA",
-        "Banks to remain open on Monday as unions defer three-day nationwide strike",
-        "Bank strike deferred after association agrees to panel on five-day banking week"
-    ]
-    print("Testing generate_heading...")
+    # Test validate_and_canonicalize_claims with various scenarios
     
-    try:
-        result = generate_heading(test_titles)
-        print(result)
-        # print(f"Generated: {result}")
-    except Exception as e:
-        print(f"API test failed: {e}")
+    # Test 1: Equivalent valid claims (same fact, different wording)
+    test_equivalent = [
+        "The Federal Reserve raised interest rates by 0.25 percentage points on Wednesday.",
+        "On Wednesday, the Fed increased the federal funds rate by a quarter point.",
+        "Interest rates were hiked by 25 basis points by the Federal Reserve this Wednesday.",
+        "The central bank announced a 0.25% rate increase yesterday."
+    ]
+    
+    # Test 2: Non-equivalent claims (related but distinct facts)
+    test_nonequivalent = [
+        "Apple announced record iPhone sales of 50 million units in Q4.",
+        "Apple's revenue grew 8% year-over-year to $119 billion.",
+        "Tim Cook said the iPhone 15 is the best-selling smartphone."
+    ]
+    
+    # Test 3: Mixed valid/invalid sentences
+    test_mixed = [
+        "The Supreme Court ruled 6-3 to overturn the precedent.",  # valid claim
+        "This decision is a disaster for civil rights.",  # opinion - invalid
+        "The court voted 6 to 3 to reverse the prior ruling.",  # valid, equivalent to #1
+        "Justice Roberts wrote the majority opinion.",  # valid but distinct claim
+        "Why did the court make this ruling?",  # question - invalid
+    ]
+    
+    # Test 4: No valid claims (all opinions/speculation)
+    test_no_valid = [
+        "I think the policy is terrible.",
+        "This will probably hurt the economy.",
+        "Everyone knows this is a bad idea.",
+    ]
+    
+    test_cases = [
+        ("Equivalent Claims", test_equivalent),
+        ("Non-Equivalent Claims", test_nonequivalent),
+        ("Mixed Valid/Invalid", test_mixed),
+        ("No Valid Claims", test_no_valid),
+    ]
+    
+    for name, sentences in test_cases:
+        print(f"\n{'='*60}")
+        print(f"TEST: {name}")
+        print(f"{'='*60}")
+        for i, s in enumerate(sentences, 1):
+            print(f"  {i}. {s}")
+        
+        try:
+            result = validate_and_canonicalize_claims(sentences)
+            print(f"\nResult:")
+            print(f"  Valid indices: {result.get('valid_sentence_indices', [])}")
+            print(f"  Equivalent: {result.get('are_equivalent', False)}")
+            print(f"  Canonical claim: {result.get('canonical_claim')}")
+            print(f"  Reasoning: {result.get('reasoning', '')}")
+        except Exception as e:
+            print(f"  ERROR: {e}")

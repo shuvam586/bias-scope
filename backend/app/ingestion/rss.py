@@ -93,11 +93,18 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
 
     for entry in feed.entries:
 
+        better_url = entry.get("link")
+        
+        if (google_news):
+            better_title = better_title[::-1].split("- ")[1][::-1]
+            better_desc = better_title
+            better_url = gnewsdecoder(better_url)["decoded_url"]
+        
         if is_bad_title(entry.get("title")):
             continue
 
         og_desc = entry.get("summary")
-        full_desc = extract_article_text(entry.get("link"))
+        full_desc = extract_article_text(better_url)
 
         if full_desc is not None:
             better_desc = full_desc
@@ -123,12 +130,7 @@ def fetch_feed(outlet: str, source_name: str = "unknown", google_news = False) -
         better_title = re.sub(r"<[^>]+>", "", better_title)
         better_title = re.sub(r"\s\|\s\w*", "", better_title)
         better_title = re.sub(r"\s+", " ", better_title).strip()
-        better_url = entry.get("link")
         
-        if (google_news):
-            better_title = better_title[::-1].split("- ")[1][::-1]
-            better_desc = better_title
-            better_url = gnewsdecoder(better_url)["decoded_url"]
 
         article = Article(
             id=None,
