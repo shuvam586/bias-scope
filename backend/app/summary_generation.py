@@ -185,11 +185,12 @@ Each `bullets` field must be an array of strings. Do not include headlines, arti
         response = openai_client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
-            max_completion_tokens=1024,
+            max_completion_tokens=4096,
             temperature=0.2,
             response_format={"type": "json_object"}
         )
         time.sleep(3)  # Rate limit
+
         
         logger.info("Total tokens (event %s): %d", event_id[:8], response.usage.total_tokens)
         

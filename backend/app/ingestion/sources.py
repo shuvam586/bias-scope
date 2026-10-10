@@ -256,14 +256,14 @@ SOURCES = {
         ],
         "bias": 6
     },
-    "organiser": {
-        "name": "Organiser",
-        "googlenews": True,
-        "feeds": [
-            "https://news.google.com/rss/search?q=site:organiser.org&hl=en-IN&gl=IN&ceid=IN:en"
-        ],
-        "bias": 5   
-    },
+    # "organiser": {
+    #     "name": "Organiser",
+    #     "googlenews": True,
+    #     "feeds": [
+    #         "https://news.google.com/rss/search?q=site:organiser.org&hl=en-IN&gl=IN&ceid=IN:en"
+    #     ],
+    #     "bias": 5   
+    # },
     "assam_tribune": {
         "name": "The Assam Tribune",
         "googlenews": True,

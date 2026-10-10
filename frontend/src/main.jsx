@@ -754,9 +754,8 @@ function EventPage() {
               {event.sources_count > 4 && <span> +{event.sources_count - 4} more</span>}
             </span>
             <div className="event-tags">
-              <span className="event-tag">Politics</span>
               <span className="event-tag">Breaking</span>
-              <span className="event-tag">US</span>
+              <span className="event-tag">India</span>
             </div>
           </div>
         </article>

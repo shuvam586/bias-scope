@@ -13,7 +13,6 @@ on:
         options:
           - all
           - article_pipeline
-          - claim_analysis
           - summary_generation
         default: all
 
@@ -53,14 +52,6 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: python -m backend.app.article_pipeline
-
-      - name: Run claim analysis
-        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'claim_analysis'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        run: python -m backend.app.claim_analysis
 
       - name: Generate event summaries
         if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'summary_generation'
