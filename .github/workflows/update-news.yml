@@ -2,9 +2,20 @@ name: update news
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */8 * * *"
 
   workflow_dispatch:
+    inputs:
+      job:
+        description: "Select pipeline to run"
+        required: true
+        type: choice
+        options:
+          - all
+          - article_pipeline
+          - claim_analysis
+          - summary_generation
+        default: all
 
 jobs:
   update-news:
@@ -29,31 +40,32 @@ jobs:
           pip install -r ml/requirements.txt
 
       - name: Cache Hugging Face model
+        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'article_pipeline'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: huggingface-${{ runner.os }}-all-MiniLM-L6-v2
 
       - name: Run article pipeline
+        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'article_pipeline'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        run: |
-          python -m backend.app.article_pipeline
+        run: python -m backend.app.article_pipeline
 
-      # - name: Run claim analysis
-      #   env:
-      #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      #     SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      #     NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-      #   run: |
-      #     python -m backend.app.claim_analysis
+      - name: Run claim analysis
+        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'claim_analysis'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: python -m backend.app.claim_analysis
 
       - name: Generate event summaries
+        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'summary_generation'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        run: |
-          python -m backend.app.summary_generation
+        run: python -m backend.app.summary_generation
