@@ -130,7 +130,7 @@ For each division, generate 4–6 concise, informative bullet points that summar
 9. If articles within a division conflict, represent the disagreement accurately rather than silently choosing one version.
 10. Do not infer political bias, criticize outlets, or compare divisions. The task is to summarize what each division reports, not to explain why its coverage differs.
 11. Avoid filler, generic introductions, editorial commentary, and conclusions that merely repeat the bullets.
-12. If a division has no articles or insufficient information, return an empty array or only the number of distinct points supported by the available material.
+12. If a division has less than 3 articles, return an empty array.
 
 ### Output format
 
