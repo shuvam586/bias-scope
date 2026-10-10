@@ -535,15 +535,17 @@ function EventPage() {
   const [event, setEvent] = useState();
   const [articles, setArticles] = useState([]);
   const [claims, setClaims] = useState([]);
+  const [summaries, setSummaries] = useState({});
   const [sourceBiases, setSourceBiases] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("articles");
+  const [summaryTab, setSummaryTab] = useState("left");
 
   useEffect(() => {
     (async () => {
       try {
-        const [er, ar, cr] = await Promise.all([
+        const [er, ar, cr, sr] = await Promise.all([
           supabase
             .from("events")
             .select("id,title,summary,image,created_at,updated_at")
@@ -559,6 +561,11 @@ function EventPage() {
             .select("id,text,source_count,article_count")
             .eq("event", eventid)
             .order("article_count", { ascending: false }),
+          supabase
+            .from("summaries")
+            .select("left,center,right")
+            .eq("id", eventid)
+            .single(),
         ]);
 
         if (er.error) throw er.error;
@@ -581,6 +588,14 @@ function EventPage() {
             biases = Object.fromEntries(sourcesData.map(s => [s.id, s.bias]));
           }
         }
+
+        // Process summaries
+        const summaryData = sr.data || {};
+        setSummaries({
+          left: summaryData.left,
+          center: summaryData.center,
+          right: summaryData.right,
+        });
 
         // Attach computed fields to event
         const enrichedEvent = {
@@ -662,6 +677,15 @@ function EventPage() {
               <Skeleton key={i} className="skeleton-text" style={{ padding: "14px 20px", margin: "0 20px", borderBottom: "1px solid var(--border)" }} />
             ))}
           </section>
+          <section className="summary-section">
+            <div className="summary-header"><Skeleton className="skeleton-text short" /></div>
+            <div className="summary-tabs">
+              <Skeleton className="skeleton-tab" />
+              <Skeleton className="skeleton-tab" />
+              <Skeleton className="skeleton-tab" />
+            </div>
+            <Skeleton className="skeleton-text" style={{ padding: "20px", height: 100 }} />
+          </section>
         </main>
       </div>
     );
@@ -736,6 +760,40 @@ function EventPage() {
             </div>
           </div>
         </article>
+
+        <section className="summary-section" aria-labelledby="summary-title">
+          <nav className="summary-tabs" role="tablist">
+            {["left", "center", "right"].map((side) => (
+              <button
+                key={side}
+                role="tab"
+                aria-selected={summaryTab === side}
+                className={`summary-tab ${summaryTab === side ? "active" : ""}`}
+                onClick={() => setSummaryTab(side)}
+              >
+                {side.charAt(0).toUpperCase() + side.slice(1)}
+              </button>
+            ))}
+          </nav>
+          <div className="summary-content-panel" role="tabpanel">
+            <div className={`summary-side summary-${summaryTab}`}>
+              {summaries[summaryTab] ? (
+                <div className="summary-content">
+                  {summaries[summaryTab].split("\n").map((point, i) => (
+                    point.trim() && (
+                      <p key={i} className="summary-point">
+                        <span className="summary-bullet">•</span>
+                        {point.trim().replace(/^[•\s]+/, "")}
+                      </p>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <p className="summary-empty">Not enough articles to generate a summary yet</p>
+              )}
+            </div>
+          </div>
+        </section>
 
         <section className="coverage-section" aria-labelledby="coverage-title">
           <header className="coverage-header">
@@ -830,6 +888,7 @@ function EventPage() {
                 )}
               </div>
             )}
+
           </div>
         </section>
 

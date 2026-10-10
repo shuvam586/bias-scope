@@ -109,6 +109,7 @@ def get_articles_of_event(event_id) -> list[Article]:
         return []
 
 def clear_db():
+    supabase.table("summaries").delete().gte("id", "00000000-0000-0000-0000-000000000000").execute()
     supabase.table("claims_sentences").delete().gte("id", "00000000-0000-0000-0000-000000000000").execute()
     supabase.table("claims").delete().gte("id", "00000000-0000-0000-0000-000000000000").execute()
     supabase.table("articles").delete().gte("id", "00000000-0000-0000-0000-000000000000").execute()
@@ -144,11 +145,10 @@ def get_articles_with_source_bias(event_id: str) -> list[dict]:
 def upsert_event_summary(event_id: str, left_summary: str | None, center_summary: str | None, right_summary: str | None):
     """Insert or update event summary in the summaries table."""
     data = {
-        "event_id": event_id,
+        "id": event_id,
         "left": left_summary,
         "center": center_summary,
-        "right": right_summary,
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "right": right_summary
     }
-    response = supabase.table("summaries").upsert(data, on_conflict="event_id").execute()
+    response = supabase.table("summaries").upsert(data, on_conflict="id").execute()
     return response.data

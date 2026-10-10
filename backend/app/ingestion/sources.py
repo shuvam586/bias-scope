@@ -385,6 +385,3 @@ SOURCES = {
         "bias": -69
     },
 }
-
-for key, s in SOURCES.items():
-    print(f"{s['bias']}")

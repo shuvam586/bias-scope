@@ -42,10 +42,18 @@ jobs:
         run: |
           python -m backend.app.article_pipeline
 
-      - name: Run claim analysis
+      # - name: Run claim analysis
+      #   env:
+      #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      #     SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      #     NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      #   run: |
+      #     python -m backend.app.claim_analysis
+
+      - name: Generate event summaries
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
-          python -m backend.app.claim_analysis
+          python -m backend.app.summary_generation
