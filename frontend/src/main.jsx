@@ -151,20 +151,6 @@ function Header() {
           </NavLink>
           <NavLink
             className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
-            to="/rising"
-            role="tab"
-          >
-            For You
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
-            to="/topics"
-            role="tab"
-          >
-            Topics
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
             to="/sources"
             role="tab"
           >
@@ -176,13 +162,6 @@ function Header() {
             role="tab"
           >
             Blindspot
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
-            to="/analysis"
-            role="tab"
-          >
-            Analysis
           </NavLink>
         </nav>
         <div className="nav-datetime" aria-live="polite">
@@ -231,7 +210,7 @@ function FeaturedEvent({ event }) {
           <div className="featured-bias-bar">
             <span className="featured-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
             <span className="featured-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
-            <span className="featured-bias-segment bias-right" style={{ width: `${percentages.right}%` }} />
+            <span className="featured-bias-segment bias-right" />
           </div>
           <span className="featured-bias-label">{dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
         </div>
@@ -272,7 +251,7 @@ function CompactEvent({ event }) {
           <div className="compact-bias-bar">
             <span className="compact-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
             <span className="compact-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
-            <span className="compact-bias-segment bias-right" style={{ width: `${percentages.right}%` }} />
+            <span className="compact-bias-segment bias-right" />
           </div>
           <span className="compact-bias-label">{dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
         </div>
@@ -408,11 +387,11 @@ function EventFeed({ rising = false }) {
             const bias = sourceBiases[a.source];
             if (bias === -69 || bias === null || bias === undefined) {
               counts.unknown++;
-            } else if (bias >= -10 && bias < -3.5) {
+            } else if (bias >= -10 && bias <= -3.5) {
               counts.left++;
-            } else if (bias >= -3.5 && bias <= 3.5) {
+            } else if (bias > -3.5 && bias < 3.5) {
               counts.center++;
-            } else if (bias > 3.5 && bias <= 10) {
+            } else if (bias >= 3.5 && bias <= 10) {
               counts.right++;
             } else {
               counts.unknown++;
@@ -540,6 +519,7 @@ function EventPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("articles");
+  const [showAllArticles, setShowAllArticles] = useState(false);
   const [summaryTab, setSummaryTab] = useState("left");
 
   useEffect(() => {
@@ -625,11 +605,11 @@ function EventPage() {
       const bias = sourceBiases[a.source];
       if (bias === -69 || bias === null || bias === undefined) {
         counts.unknown++;
-      } else if (bias >= -10 && bias < -3.5) {
+      } else if (bias >= -10 && bias <= -3.5) {
         counts.left++;
-      } else if (bias >= -3.5 && bias <= 3.5) {
+      } else if (bias > -3.5 && bias < 3.5) {
         counts.center++;
-      } else if (bias > 3.5 && bias <= 10) {
+      } else if (bias >= 3.5 && bias <= 10) {
         counts.right++;
       } else {
         counts.unknown++;
@@ -731,7 +711,7 @@ function EventPage() {
                 <span className="bias-segment bias-center" style={{ width: `${biasPercentages.center}%` }}>
                   {biasPercentages.center > 0 && <span className="bias-segment-text">Center {biasPercentages.center}%</span>}
                 </span>
-                <span className="bias-segment bias-right" style={{ width: `${biasPercentages.right}%` }}>
+                <span className="bias-segment bias-right">
                   {biasPercentages.right > 0 && <span className="bias-segment-text">Right {biasPercentages.right}%</span>}
                 </span>
               </span>
@@ -855,36 +835,60 @@ function EventPage() {
             {activeTab === "articles" && (
               <div className="article-list">
                 {articles.length > 0 ? (
-                  articles.map((a) => (
-                    <a
-                      key={a.id}
-                      href={a.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="article-row"
-                    >
-                      <div className="article-source-badge">
-                        {(a.source || "N")[0].toUpperCase()}
-                      </div>
-                      <div className="article-content">
-                        <div className="article-meta">
-                          <span>{a.source}</span>
-                          <time>{time(a.published_at)}</time>
-                        </div>
-                        <h3 className="article-title">{a.title}</h3>
-                      </div>
-                      <button className="article-external" aria-label="Open article">
-                        <Icon name="external" size={16} />
+                  <>
+                    {(showAllArticles ? articles : articles.slice(0, 7)).map((a) => {
+                      const bias = sourceBiases[a.source];
+                      let biasLabel = "unknown";
+                      if (bias !== null && bias !== undefined && bias !== -69) {
+                        if (bias <= -3.5) biasLabel = "left";
+                        else if (bias >= 3.5) biasLabel = "right";
+                        else biasLabel = "center";
+                      }
+                      return (
+                        <a
+                          key={a.id}
+                          href={a.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="article-row"
+                        >
+                          <div className="article-source-badge">
+                            {(a.source || "N")[0].toUpperCase()}
+                          </div>
+                          <div className="article-content">
+                            <div className="article-meta">
+                              <span>{a.source}</span>
+                              <time>{time(a.published_at)}</time>
+                              <span className={`article-bias ${biasLabel}`}>{biasLabel}</span>
+                            </div>
+                            <h3 className="article-title">{a.title}</h3>
+                          </div>
+                          <button className="article-external" aria-label="Open article">
+                            <Icon name="external" size={16} />
+                          </button>
+                        </a>
+                      );
+                    })
+                    }
+                    {!showAllArticles && articles.length > 7 && (
+                      <button className="show-more-btn" onClick={() => setShowAllArticles(true)}>
+                        Show more
                       </button>
-                    </a>
-                  ))
+                    )}
+                    {showAllArticles && (
+                      <button className="show-more-btn" onClick={() => setShowAllArticles(false)}>
+                        Show less
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <div className="empty-state" style={{ padding: 32, borderTop: "1px solid var(--border)" }}>
                     <div className="empty-icon"><Icon name="arrow" size={32} /></div>
                     <h3 className="empty-title">No articles</h3>
                     <p className="empty-text">No coverage found for this event</p>
                   </div>
-                )}
+                )
+                }
               </div>
             )}
 
@@ -1100,6 +1104,7 @@ function SourcesPage() {
             ...s,
             count: articleCounts[s.id] || 0,
           }))
+          .filter(s => s.count > 0)
           .sort((a, b) => b.count - a.count);
 
         setSources(sourceList);
