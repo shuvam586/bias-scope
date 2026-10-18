@@ -158,10 +158,10 @@ function Header() {
           </NavLink>
           <NavLink
             className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
-            to="/blindspot"
+            to="/theskew"
             role="tab"
           >
-            Blindspot
+            The Skew
           </NavLink>
         </nav>
         <div className="nav-datetime" aria-live="polite">
@@ -260,15 +260,14 @@ function CompactEvent({ event }) {
   );
 }
 
-function OtherEvents({ events }) {
+function OtherEvents({ events, limit }) {
+  const displayEvents = limit ? events.slice(0, limit) : events;
+
   return (
     <section className="events-list" aria-labelledby="other-events-title">
-      <div className="column-header">
-        <h3 className="column-title" id="other-events-title">More Events</h3>
-      </div>
-      {events.length > 0 ? (
+      {displayEvents.length > 0 ? (
         <div className="events-grid">
-          {events.map((e) => <CompactEvent key={e.id} event={e} />)}
+          {displayEvents.map((e) => <CompactEvent key={e.id} event={e} />)}
         </div>
       ) : (
         <div className="empty-state">
@@ -277,6 +276,103 @@ function OtherEvents({ events }) {
         </div>
       )}
     </section>
+  );
+}
+
+function AdditionalEventsSection({ events }) {
+  const leftEvents = events.slice(3, events.length);
+  const rightEvents = events.slice(0, 3);
+
+  // Right column shows only 1 event
+
+  return (
+    <section className="additional-section" aria-labelledby="additional-events-title">
+      <div className="additional-grid">
+        <div className="additional-left-col">
+          <div className="horizontal-cards-grid">
+            {leftEvents.map((e) => <HorizontalEventCard key={e.id} event={e} />)}
+          </div>
+        </div>
+        <div className="additional-right-col">
+          {rightEvents.map((e) => <FeaturedArticleCard key={e.id} event={e} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HorizontalEventCard({ event }) {
+  const latestArticleTime = event.articles?.length
+    ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
+    : null;
+  const percentages = event.bias_percentages || { left: 0, center: 0, right: 0 };
+  const dominant = event.bias_dominant || "Mixed";
+  const dominantPct = dominant !== "Mixed" ? percentages[dominant.toLowerCase()] : 0;
+
+  return (
+    <Link
+      to={`/event/${event.id}`}
+      className="horizontal-event-card"
+      aria-label={`Read coverage of ${event.title}`}
+    >
+      <div className="horizontal-event-content">
+        <h3 className="horizontal-event-title">{event.title}</h3>
+        <div className="horizontal-event-stats">
+          <div className="horizontal-event-bias-bar">
+            <span className="horizontal-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
+            <span className="horizontal-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
+            <span className="horizontal-bias-segment bias-right" style={{ width: `${percentages.right}%` }} />
+          </div>
+          <span>→ {event.sources_count || 0} sources</span>
+          <span>→ {dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
+          <time className="horizontal-event-time">
+            {latestArticleTime ? time(new Date(latestArticleTime)) : time(event.updated_at || event.created_at)}
+          </time>
+        </div>
+      </div>
+      {event.image && (
+        <img src={event.image} alt="" className="horizontal-event-image" loading="lazy" />
+      )}
+    </Link>
+  );
+}
+
+function FeaturedArticleCard({ event }) {
+  const latestArticleTime = event.articles?.length
+    ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
+    : null;
+  const percentages = event.bias_percentages || { left: 0, center: 0, right: 0 };
+  const dominant = event.bias_dominant || "Mixed";
+  const dominantPct = dominant !== "Mixed" ? percentages[dominant.toLowerCase()] : 0;
+
+  return (
+    <Link
+      to={`/event/${event.id}`}
+      className="featured-article-card"
+      aria-label={`Read coverage of ${event.title}`}
+    >
+      {event.image && (
+        <img src={event.image} alt="" className="featured-article-image" loading="lazy" />
+      )}
+      <div className="featured-article-content">
+        <div className="featured-article-meta">
+          <time className="featured-article-time">
+            {latestArticleTime ? time(new Date(latestArticleTime)) : time(event.updated_at || event.created_at)}
+          </time>
+          <span className="featured-article-bias">
+            {dominant === "Left" && <span className="bias-badge left">Left</span>}
+            {dominant === "Right" && <span className="bias-badge right">Right</span>}
+            {dominant === "Center" && <span className="bias-badge center">Center</span>}
+            {dominant === "Mixed" && <span className="bias-badge">Mixed</span>}
+          </span>
+        </div>
+        <h3 className="featured-article-title">{event.title}</h3>
+        <div className="featured-article-stats">
+          <span>→ {event.sources_count || 0} sources</span>
+          <span>→ {dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -295,23 +391,137 @@ function PromoCard() {
   );
 }
 
-function BlindspotPanel() {
-  return (
-    <aside className="blindspot-panel" aria-labelledby="blindspot-title">
-      <h3 className="blindspot-title" id="blindspot-title">Blindspot</h3>
-      <p className="blindspot-desc">
-        This section highlights stories with uneven coverage across political perspectives. 
-        It will show events where Left, Center, or Right-leaning sources significantly 
-        over- or under-report compared to the overall media landscape.
-      </p>
-      <div className="blindspot-empty">
-        <div className="blindspot-empty-icon">
-          <Icon name="arrow" size={40} />
-        </div>
-        <h4 className="blindspot-empty-title">Coming Soon</h4>
-        <p className="blindspot-empty-text">
-          Coverage analysis requires bias classification data that is not yet available.
+function TheSkewPanel({ skewEvents = [] }) {
+  if (skewEvents.length === 0) {
+    return (
+      <aside className="theskew-panel" aria-labelledby="theskew-title">
+        <h3 className="theskew-title" id="theskew-title">The Skew</h3>
+        <p className="theskew-desc">
+          This section highlights stories with uneven coverage across political perspectives. 
+          It will show events where Left, Center, or Right-leaning sources significantly 
+          over- or under-report compared to the overall media landscape.
         </p>
+        <div className="theskew-empty">
+          <div className="theskew-empty-icon">
+            <Icon name="arrow" size={40} />
+          </div>
+          <h4 className="theskew-empty-title">Coming Soon</h4>
+          <p className="theskew-empty-text">
+            Coverage analysis requires bias classification data that is not yet available.
+          </p>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="theskew-panel" aria-labelledby="theskew-title">
+      <div className="theskew-header">
+        <h3 className="theskew-title" id="theskew-title">The Skew</h3>
+      </div>
+      <p className="theskew-desc">
+        These stories have coverage from only one political perspective.
+      </p>
+      <div className="theskew-grid">
+        {skewEvents.map((e) => (
+          <Link key={e.id} to={`/event/${e.id}`} className="theskew-event">
+            {e.image ? (
+              <img src={e.image} alt="" className="theskew-event-image" loading="lazy" />
+            ) : (
+              <div className="theskew-event-placeholder">
+                <Icon name="arrow" size={32} />
+              </div>
+            )}
+            <div className="theskew-event-content">
+              <div className="theskew-event-meta">
+                <time className="theskew-event-time">
+                  {(e.articles?.length ? Math.max(...e.articles.map(a => new Date(a.published_at).getTime())) : null) ? time(new Date((e.articles?.length ? Math.max(...e.articles.map(a => new Date(a.published_at).getTime())) : null))) : time(e.updated_at || e.created_at)}
+                </time>
+                <span className="theskew-event-bias">
+                  {e.bias_percentages.left === 0 ? (
+                    <span className="bias-badge right">Missing Left</span>
+                  ) : (
+                    <span className="bias-badge left">Missing Right</span>
+                  )}
+                </span>
+              </div>
+              <h4 className="theskew-event-title">{e.title}</h4>
+              <div className="theskew-event-stats">
+                <span>→ {e.sources_count || 0} sources</span>
+                <span>→ {e.bias_percentages.left === 0 ? e.bias_percentages.right : e.bias_percentages.left}% {e.bias_percentages.left === 0 ? 'Right' : 'Left'}</span>
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function DailyDispatchPanel({ dispatchEvents = [] }) {
+  if (dispatchEvents.length === 0) {
+    return (
+      <aside className="daily-dispatch-panel" aria-labelledby="daily-dispatch-title">
+        <h3 className="daily-dispatch-title" id="daily-dispatch-title">Daily Dispatch</h3>
+        <p className="daily-dispatch-desc">
+          The most recent stories with full source details.
+        </p>
+        <div className="daily-dispatch-empty">
+          <div className="daily-dispatch-empty-icon">
+            <Icon name="arrow" size={40} />
+          </div>
+          <h4 className="daily-dispatch-empty-title">No stories yet</h4>
+          <p className="daily-dispatch-empty-text">
+            Check back soon for the latest updates.
+          </p>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="daily-dispatch-panel" aria-labelledby="daily-dispatch-title">
+      <div className="daily-dispatch-header">
+        <h3 className="daily-dispatch-title" id="daily-dispatch-title">Daily Dispatch</h3>
+      </div>
+      <p className="daily-dispatch-desc">
+        Latest stories with source counts and political bias breakdown.
+      </p>
+      <div className="daily-dispatch-grid">
+        {dispatchEvents.map((e) => (
+          <Link key={e.id} to={`/event/${e.id}`} className="daily-dispatch-event">
+            <div className="daily-dispatch-event-content">
+              <div className="daily-dispatch-event-meta">
+                <time className="daily-dispatch-event-time">
+                  {(e.articles?.length
+                    ? time(new Date(Math.min(...e.articles.map(a => new Date(a.published_at).getTime()))))
+                    : time(e.updated_at || e.created_at))}
+                </time>
+                <span className="daily-dispatch-event-bias">
+                  {e.bias_percentages.left > e.bias_percentages.right && e.bias_percentages.left > e.bias_percentages.center ? (
+                    <span className="bias-badge left">Left</span>
+                  ) : e.bias_percentages.right > e.bias_percentages.left && e.bias_percentages.right > e.bias_percentages.center ? (
+                    <span className="bias-badge right">Right</span>
+                  ) : (
+                    <span className="bias-badge center">Center</span>
+                  )}
+                </span>
+              </div>
+              <h4 className="daily-dispatch-event-title">{e.title}</h4>
+              <div className="daily-dispatch-event-stats">
+                <span>→ {e.sources_count || 0} sources</span>
+                <span>
+                  → {(() => {
+                    const p = e.bias_percentages || { left: 0, center: 0, right: 0 };
+                    if (p.left >= p.center && p.left >= p.right) return `${p.left}% Left`;
+                    if (p.right >= p.left && p.right >= p.center) return `${p.right}% Right`;
+                    return `${p.center}% Center`;
+                  })()}
+                </span>
+              </div>
+            </div>
+          </Link>
+        ))}
       </div>
     </aside>
   );
@@ -413,6 +623,10 @@ function EventFeed({ rising = false }) {
             else if (percentages.right === max) dominant = "Right";
           }
 
+          const publishedTime = articles.length
+            ? time(new Date(Math.min(...articles.map(a => new Date(a.published_at).getTime()))))
+            : time(e.updated_at || e.created_at);
+
           return {
             ...e,
             articles,
@@ -421,6 +635,7 @@ function EventFeed({ rising = false }) {
             sources_count: sources.size,
             bias_percentages: percentages,
             bias_dominant: dominant,
+            publishedTime,
           };
         });
 
@@ -454,11 +669,44 @@ function EventFeed({ rising = false }) {
   const featuredEvent = sorted[0];
   const otherEvents = sorted.slice(1);
 
+  // Find skew events: events missing left coverage (left% === 0) OR missing right coverage (right% === 0)
+  const skewCandidates = sorted.filter(e => {
+    const percentages = e.bias_percentages || { left: 0, center: 0, right: 0 };
+    return percentages.left === 0 || percentages.right === 0;
+  });
+  
+  // Take top 2 skew events (they're already sorted by sources/articles count)
+  const skewEvents = skewCandidates.slice(0, 2);
+  
+  // Exclude skew events from the main grid
+  const skewIds = new Set(skewEvents.map(e => e.id));
+  const mainEvents = otherEvents.filter(e => !skewIds.has(e.id));
+
+  // Select 5 most recent events from mainEvents for Daily Dispatch
+  const dispatchEvents = [...mainEvents]
+    .sort((a, b) => {
+      const getTimestamp = (e) => {
+        if (e.articles?.length) {
+          return Math.min(...e.articles.map(a => new Date(a.published_at).getTime()));
+        }
+        return new Date(e.updated_at || e.created_at).getTime();
+      };
+      return getTimestamp(b) - getTimestamp(a);
+    })
+    .slice(0, 5);
+
+  // Exclude dispatch events from main grid as well
+  const dispatchIds = new Set(dispatchEvents.map(e => e.id));
+  const finalMainEvents = mainEvents.filter(e => !dispatchIds.has(e.id));
+
   if (loading) {
     return (
       <div className="app-shell">
         <Header />
         <main className="main-grid" role="main">
+          <aside className="column left-col">
+            <DailyDispatchPanel dispatchEvents={[]} />
+          </aside>
           <section className="column center-col">
             <EventSkeleton featured />
             <section className="events-list">
@@ -470,7 +718,7 @@ function EventFeed({ rising = false }) {
           </section>
           <aside className="column right-col">
             <PromoCard />
-            <BlindspotPanel />
+            <TheSkewPanel skewEvents={[]} />
           </aside>
         </main>
       </div>
@@ -496,15 +744,19 @@ function EventFeed({ rising = false }) {
     <div className="app-shell">
       <Header />
       <main className="main-grid" role="main">
+        <aside className="column left-col">
+          <DailyDispatchPanel dispatchEvents={dispatchEvents} />
+        </aside>
         <section className="column center-col">
           <FeaturedEvent event={featuredEvent} />
-          <OtherEvents events={otherEvents} />
+          <OtherEvents events={finalMainEvents} limit={13} />
         </section>
         <aside className="column right-col">
           <PromoCard />
-          <BlindspotPanel />
+          <TheSkewPanel skewEvents={skewEvents} />
         </aside>
       </main>
+      <AdditionalEventsSection events={finalMainEvents.slice(13)} />
     </div>
   );
 }
@@ -1209,6 +1461,27 @@ function SourcesPage() {
   );
 }
 
+function Footer() {
+  return (
+    <footer className="site-footer">
+      <div className="footer-content">
+        <div className="footer-left">
+          <img src="/logo.png" alt="BiasScope" className="footer-logo" />
+        </div>
+        <div className="footer-center">
+          <p className="footer-quote">"beware; for i am fearless, and therefore powerful"</p>
+        </div>
+        <div className="footer-right">
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="github-link">
+            <Icon name="github" size={20} />
+            <span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 function App() {
   const location = useLocation();
   useEffect(() => {
@@ -1224,12 +1497,16 @@ function App() {
   }, [location.pathname]);
 
   return (
-    <Routes>
-      <Route path="/" element={<EventFeed />} />
-      <Route path="/sources" element={<SourcesPage />} />
-      <Route path="/event/:eventid" element={<EventPage />} />
-      <Route path="/source/:sourceid" element={<SourcePage />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<EventFeed />} />
+        <Route path="/theskew" element={<EventFeed />} />
+        <Route path="/sources" element={<SourcesPage />} />
+        <Route path="/event/:eventid" element={<EventPage />} />
+        <Route path="/source/:sourceid" element={<SourcePage />} />
+      </Routes>
+      <Footer />
+    </>
   );
 }
 
