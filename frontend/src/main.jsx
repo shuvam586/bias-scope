@@ -279,7 +279,8 @@ function OtherEvents({ events, limit }) {
   );
 }
 
-function AdditionalEventsSection({ events }) {
+function AdditionalEventsSection({ events, showAdditionalEvents = true }) {
+  if (!showAdditionalEvents) return null;
   const leftEvents = events.slice(3, events.length);
   const rightEvents = events.slice(0, 3);
 
@@ -527,7 +528,7 @@ function DailyDispatchPanel({ dispatchEvents = [] }) {
   );
 }
 
-function EventFeed({ rising = false }) {
+function EventFeed({ rising = false, showAdditionalEvents = true, showLeftCol = true }) {
   const [events, setEvents] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -704,9 +705,11 @@ function EventFeed({ rising = false }) {
       <div className="app-shell">
         <Header />
         <main className="main-grid" role="main">
-          <aside className="column left-col">
-            <DailyDispatchPanel dispatchEvents={[]} />
-          </aside>
+          {showLeftCol && (
+            <aside className="column left-col">
+              <DailyDispatchPanel dispatchEvents={[]} />
+            </aside>
+          )}
           <section className="column center-col">
             <EventSkeleton featured />
             <section className="events-list">
@@ -744,9 +747,11 @@ function EventFeed({ rising = false }) {
     <div className="app-shell">
       <Header />
       <main className="main-grid" role="main">
-        <aside className="column left-col">
-          <DailyDispatchPanel dispatchEvents={dispatchEvents} />
-        </aside>
+        {showLeftCol && (
+          <aside className="column left-col">
+            <DailyDispatchPanel dispatchEvents={dispatchEvents} />
+          </aside>
+        )}
         <section className="column center-col">
           <FeaturedEvent event={featuredEvent} />
           <OtherEvents events={finalMainEvents} limit={13} />
@@ -756,10 +761,289 @@ function EventFeed({ rising = false }) {
           <TheSkewPanel skewEvents={skewEvents} />
         </aside>
       </main>
-      <AdditionalEventsSection events={finalMainEvents.slice(13)} />
+      <AdditionalEventsSection events={finalMainEvents.slice(13)} showAdditionalEvents={showAdditionalEvents} />
     </div>
   );
 }
+
+function SkewFeed() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sourceBiases, setSourceBiases] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Fetch events with basic fields
+        const { data: eventsData, error: eventsErr } = await supabase
+          .from("events")
+          .select("id, title, summary, image, created_at, updated_at")
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (eventsErr) throw eventsErr;
+
+        // Fetch all articles for these events to compute counts and sources
+        const eventIds = (eventsData || []).map((e) => e.id);
+        let articlesByEvent = {};
+        let sourcesByEvent = {};
+
+        if (eventIds.length > 0) {
+          const { data: articlesData, error: articlesErr } = await supabase
+            .from("articles")
+            .select("id, title, source, published_at, cluster")
+            .in("cluster", eventIds);
+
+          if (articlesErr) throw articlesErr;
+
+          // Group articles by event (cluster)
+          for (const article of articlesData || []) {
+            const clusterId = article.cluster;
+            if (!articlesByEvent[clusterId]) articlesByEvent[clusterId] = [];
+            articlesByEvent[clusterId].push(article);
+            if (!sourcesByEvent[clusterId]) sourcesByEvent[clusterId] = new Set();
+            sourcesByEvent[clusterId].add(article.source);
+          }
+        }
+
+        const allSources = new Set();
+        (eventsData || []).forEach(e => {
+          const sources = sourcesByEvent[e.id] || new Set();
+          sources.forEach(s => allSources.add(s));
+        });
+
+        // Fetch biases for all sources FIRST
+        let sourceBiasesMap = {};
+        if (allSources.size > 0) {
+          const { data: sourcesData, error: sourcesErr } = await supabase
+            .from("sources")
+            .select("id,bias")
+            .in("id", Array.from(allSources));
+
+          if (!sourcesErr && sourcesData) {
+            sourceBiasesMap = Object.fromEntries(sourcesData.map(s => [s.id, s.bias]));
+            setSourceBiases(sourceBiasesMap);  // Also update state for useMemo deps
+          }
+        }
+
+        // NOW compute processed WITH the biases we just fetched
+        const processed = (eventsData || []).map((e) => {
+          const articles = articlesByEvent[e.id] || [];
+          const sources = sourcesByEvent[e.id] || new Set();
+          
+          // Calculate bias distribution for this event
+          const counts = { left: 0, center: 0, right: 0, unknown: 0 };
+          articles.forEach(a => {
+            const bias = sourceBiasesMap[a.source];  // Use local variable, not state
+            if (bias === -69 || bias === null || bias === undefined) {
+              counts.unknown++;
+            } else if (bias >= -10 && bias <= -3.5) {
+              counts.left++;
+            } else if (bias > -3.5 && bias < 3.5) {
+              counts.center++;
+            } else if (bias >= 3.5 && bias <= 10) {
+              counts.right++;
+            } else {
+              counts.unknown++;
+            }
+          });
+          const totalBiased = counts.left + counts.center + counts.right;
+          const percentages = totalBiased > 0 ? {
+            left: Math.round((counts.left / totalBiased) * 100),
+            center: Math.round((counts.center / totalBiased) * 100),
+            right: Math.round((counts.right / totalBiased) * 100),
+          } : { left: 0, center: 0, right: 0 };
+          
+          // Determine dominant bias
+          let dominant = "Mixed";
+          if (totalBiased > 0) {
+            const max = Math.max(percentages.left, percentages.center, percentages.right);
+            if (percentages.left === max) dominant = "Left";
+            else if (percentages.center === max) dominant = "Center";
+            else if (percentages.right === max) dominant = "Right";
+          }
+
+          const publishedTime = articles.length
+            ? time(new Date(Math.min(...articles.map(a => new Date(a.published_at).getTime()))))
+            : time(e.updated_at || e.created_at);
+
+          return {
+            ...e,
+            articles,
+            articles_count: articles.length,
+            sources: Array.from(sources),
+            sources_count: sources.size,
+            bias_percentages: percentages,
+            bias_dominant: dominant,
+            publishedTime,
+          };
+        });
+
+        setEvents(processed);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // Build two lists: missingRight (no right sources) and missingLeft (no left sources)
+  const missingRight = useMemo(() => 
+    events
+      .filter(e => {
+        // Check if event has NO right-leaning sources
+        const articles = e.articles || [];
+        const hasRightSource = articles.some(a => {
+          const bias = sourceBiases[a.source];
+          return bias !== null && bias !== undefined && bias !== -69 && bias >= 3.5;
+        });
+        return !hasRightSource && articles.length > 0;
+      })
+      .sort((a, b) => (b.sources_count || 0) - (a.sources_count || 0))
+      .slice(0, 4),
+  [events, sourceBiases]);
+
+  const missingLeft = useMemo(() => 
+    events
+      .filter(e => {
+        // Check if event has NO left-leaning sources
+        const articles = e.articles || [];
+        const hasLeftSource = articles.some(a => {
+          const bias = sourceBiases[a.source];
+          return bias !== null && bias !== undefined && bias !== -69 && bias <= -3.5;
+        });
+        return !hasLeftSource && articles.length > 0;
+      })
+      .sort((a, b) => (b.sources_count || 0) - (a.sources_count || 0))
+      .slice(0, 4),
+  [events, sourceBiases]);
+
+  if (loading) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="main-grid skew-grid" role="main">
+          <section className="column center-col">
+            <div className="skew-skeleton">
+              <Skeleton className="skeleton-text short" />
+              <Skeleton className="skeleton-text short" />
+              {[...Array(4)].map((_, i) => <EventSkeleton key={i} />)}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="app-shell">
+        <Header />
+        <main className="main-grid skew-grid">
+          <div className="empty-state" style={{ gridColumn: "1/-1" }}>
+            <div className="empty-icon"><Icon name="arrow" size={40} /></div>
+            <h3 className="empty-title">Couldn't load events</h3>
+            <p className="empty-text">{error}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <Header />
+      <main className="main-grid skew-grid" role="main">
+        <div className="skew-logo-wrapper">
+          <img src="/skewlogo.png" alt="BiasScope" className="skew-logo" />
+        </div>
+        <section className="skew-grid-content">
+          {/* Missing Right column */}
+          <div className="skew-column">
+            <div className="skew-column-header">
+              <h2 className="skew-column-title">Towards Left</h2>
+            </div>
+            <div className="skew-event-list">
+              {missingRight.length > 0 ? (
+                missingRight.map((e) => <SkewEventCard key={e.id} event={e} missingSide="left" />)
+              ) : (
+                <div className="skew-empty">
+                  <p className="skew-empty-text">No stories missing right coverage</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Missing Left column */}
+          <div className="skew-column">
+            <div className="skew-column-header">
+              <h2 className="skew-column-title">Towards Right</h2>
+            </div>
+            <div className="skew-event-list">
+              {missingLeft.length > 0 ? (
+                missingLeft.map((e) => <SkewEventCard key={e.id} event={e} missingSide="right" />)
+              ) : (
+                <div className="skew-empty">
+                  <p className="skew-empty-text">No stories missing left coverage</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+// Skew Event Card Component
+function SkewEventCard({ event, missingSide }) {
+  const latestArticleTime = event.articles?.length
+    ? Math.max(...event.articles.map(a => new Date(a.published_at).getTime()))
+    : null;
+  const percentages = event.bias_percentages || { left: 0, center: 0, right: 0 };
+  let dominant = (percentages[missingSide]!=0 ? missingSide : "Center") || "Mixed";
+  if (dominant == "left") {
+    dominant = "Left";
+  } else if (dominant == "right") {
+    dominant = "Right";
+  }
+  const dominantPct = dominant !== "Mixed" ? percentages[dominant.toLowerCase()] : 0;
+
+  return (
+    <Link
+      to={`/event/${event.id}`}
+      className="skew-event-card"
+      aria-label={`Read coverage of ${event.title}`}
+    >
+      {event.image && (
+        <img src={event.image} alt="" className="skew-event-image" loading="lazy" />
+      )}
+      <div className="skew-event-content">
+        <div className="skew-event-meta">
+          <time className="skew-event-time">
+            {latestArticleTime ? time(new Date(latestArticleTime)) : time(event.updated_at || event.created_at)}
+          </time>
+          <span>· {event.sources_count || 0} sources</span>
+        </div>
+        <h3 className="skew-event-title">{event.title}</h3>
+        <div className="skew-event-stats">
+          
+          <div className="compact-bias">
+            <div className="compact-bias-bar">
+              <span className="compact-bias-segment bias-left" style={{ width: `${percentages.left}%` }} />
+              <span className="compact-bias-segment bias-center" style={{ width: `${percentages.center}%` }} />
+              <span className="compact-bias-segment bias-right" />
+            </div>
+            <span className="compact-bias-label">{dominant}{dominantPct > 0 && ` ${dominantPct}%`}</span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 
 function EventPage() {
   const { eventid } = useParams();
@@ -1472,7 +1756,7 @@ function Footer() {
           <p className="footer-quote">"beware; for i am fearless, and therefore powerful"</p>
         </div>
         <div className="footer-right">
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="github-link">
+          <a href="https://github.com/shuvam586/bias-scope" target="_blank" rel="noopener noreferrer" className="github-link">
             <Icon name="github" size={20} />
             <span>GitHub</span>
           </a>
@@ -1500,7 +1784,7 @@ function App() {
     <>
       <Routes>
         <Route path="/" element={<EventFeed />} />
-        <Route path="/theskew" element={<EventFeed />} />
+        <Route path="/theskew" element={<SkewFeed />} />
         <Route path="/sources" element={<SourcesPage />} />
         <Route path="/event/:eventid" element={<EventPage />} />
         <Route path="/source/:sourceid" element={<SourcePage />} />
