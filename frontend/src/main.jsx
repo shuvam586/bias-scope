@@ -668,7 +668,8 @@ function EventFeed({ rising = false, showAdditionalEvents = true, showLeftCol = 
   );
 
   const featuredEvent = sorted[0];
-  const otherEvents = sorted.slice(1);
+  const otherEvents = [...sorted.slice(1,2), ...sorted.slice(3)];
+  console.log(otherEvents);
 
   // Find skew events: events missing left coverage (left% === 0) OR missing right coverage (right% === 0)
   const skewCandidates = sorted.filter(e => {
@@ -1753,7 +1754,7 @@ function Footer() {
           <img src="/logo.png" alt="BiasScope" className="footer-logo" />
         </div>
         <div className="footer-center">
-          <p className="footer-quote">"beware; for i am fearless, and therefore powerful"</p>
+          <p className="footer-quote">"There are no facts, only interpretations."</p>
         </div>
         <div className="footer-right">
           <a href="https://github.com/shuvam586/bias-scope" target="_blank" rel="noopener noreferrer" className="github-link">
