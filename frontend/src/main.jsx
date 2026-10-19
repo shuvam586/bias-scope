@@ -9,6 +9,7 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
+import { Analytics } from "@vercel/analytics/react"
 import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 
@@ -668,7 +669,7 @@ function EventFeed({ rising = false, showAdditionalEvents = true, showLeftCol = 
   );
 
   const featuredEvent = sorted[0];
-  const otherEvents = [...sorted.slice(1,2), ...sorted.slice(3)];
+  const otherEvents = sorted.slice(1);
   console.log(otherEvents);
 
   // Find skew events: events missing left coverage (left% === 0) OR missing right coverage (right% === 0)
@@ -1791,6 +1792,7 @@ function App() {
         <Route path="/source/:sourceid" element={<SourcePage />} />
       </Routes>
       <Footer />
+      <Analytics />
     </>
   );
 }
